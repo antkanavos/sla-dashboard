@@ -19,20 +19,35 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
 #MainMenu, footer { visibility: hidden; }
-header { visibility: visible !important; background: transparent !important; }
 .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
-section[data-testid="stSidebar"] { background: #1a2235; min-width: 210px !important; max-width: 210px !important; }
-section[data-testid="stSidebar"] * { color: #8fa3c0 !important; }
 
-/* Keep sidebar toggle always visible */
-button[data-testid="collapsedControl"],
-section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+/* Sidebar styling */
+[data-testid="stSidebar"] {
+    background-color: #1a2235 !important;
+}
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div {
+    color: #8fa3c0;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    color: #8fa3c0 !important;
+    font-size: 13px;
+    font-weight: 500;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    color: white !important;
+}
+/* Sidebar collapse button - always visible */
+[data-testid="stSidebarCollapseButton"],
+button[data-testid="collapsedControl"] {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
+    background: #2a3550 !important;
+    border-radius: 50% !important;
 }
-/* Hide only the Streamlit deploy/share header content, not the whole header */
-header [data-testid="stToolbar"] { visibility: hidden; }
 
 .kpi-card { background: white; border-radius: 16px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f2f5; }
 .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 6px; }
@@ -369,7 +384,7 @@ with st.sidebar:
     <hr style='border-color:#2a3550;margin:6px 0 14px;'>
     """, unsafe_allow_html=True)
 
-    page = st.radio("", [
+    page = st.radio("Πλοήγηση", [
         "🏠  Επισκόπηση",
         "📈  Ιστορικό",
         "🔁  Recurring Misses",
