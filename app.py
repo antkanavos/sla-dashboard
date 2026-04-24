@@ -24,8 +24,12 @@ def check_password():
 check_password()
 
 # ---------- LOAD DATA ----------
-data_url = "https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv"
-df = pd.read_csv(data_url)
+data_url = st.text_input("https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv")
+
+if data_url:
+    df = pd.read_csv(data_url)
+else:
+    st.stop()
 
 master = pd.read_csv("master.csv")
 holidays_df = pd.read_csv("holidays.csv")
@@ -75,13 +79,9 @@ master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 df["POSTCODE"] = df["Τ.Κ Παράδοσης"].apply(clean_postcode)
 master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postcode)
 
-# ---------- 🔥 FIX: MODE SLA ----------
-master = (
-    master
-    .groupby(["KEY_CLEAN", "POSTCODE"])["Χρόνος Παράδοσης"]
-    .agg(lambda x: x.mode()[0])
-    .reset_index()
-)
+# ---------- MASTER CLEAN ----------
+master = master.sort_values("Χρόνος Παράδοσης")
+master = master.drop_duplicates(subset=["KEY_CLEAN", "POSTCODE"], keep="first")
 
 # ---------- MERGE ----------
 df = df.merge(
@@ -99,8 +99,29 @@ def fuzzy_match(row):
     if subset.empty:
         return None
 
-    # επειδή χάσαμε address στο aggregation, δεν έχει νόημα εδώ πλέον
+    choices = subset["ADDR_CLEAN"].tolist()
+
+    match = process.extractOne(
+        row["ADDR_CLEAN"],
+        choices,
+        scorer=fuzz.token_sort_ratio
+    )
+
+    if match is None:
+        return None
+
+    _, score, idx = match
+
+    if score >= 75:
+        return subset.iloc[idx]["Χρόνος Παράδοσης"]
+
     return None
+
+fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
+fuzzy_results = pd.to_numeric(fuzzy_results, errors="coerce")
+
+df.loc[unmatched.index, "Χρόνος Παράδοσης"] = \
+df.loc[unmatched.index, "Χρόνος Παράδοσης"].combine_first(fuzzy_results)
 
 # ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
@@ -177,3 +198,8 @@ col2.metric("Παραδόθηκαν", delivered_count)
 col3.metric("Εντός SLA", on_time_count)
 col4.metric("SLA %", f"{sla_percent:.2f}%")
 col5.metric("Missing SLA", missing_sla)
+
+st.divider()
+
+st.write("Fuzzy matches:", fuzzy_results.notna().sum())
+st.write("Delivered rows:", len(delivered))
