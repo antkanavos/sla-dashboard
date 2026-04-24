@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import plotly.express as px
 
 st.set_page_config(layout="wide")
 
@@ -107,7 +108,7 @@ col4.metric("SLA %", f"{sla_percent:.2f}%")
 
 st.divider()
 
-# ---------- SLA ANALYSIS ----------
+# ---------- SLA DONUTS ----------
 st.subheader("Ανάλυση SLA")
 
 sla_summary = delivered.groupby("Χρόνος Παράδοσης").agg(
@@ -117,11 +118,45 @@ sla_summary = delivered.groupby("Χρόνος Παράδοσης").agg(
 
 sla_summary["late"] = sla_summary["total"] - sla_summary["on_time"]
 
-st.dataframe(sla_summary)
+cols = st.columns(3)
 
-# ---------- DELAYS ----------
+for i, sla in enumerate([24, 48, 96]):
+    if sla in sla_summary.index:
+        row = sla_summary.loc[sla]
+
+        fig = px.pie(
+            values=[row["on_time"], row["late"]],
+            names=["Εντός SLA", "Εκτός SLA"],
+            hole=0.6
+        )
+
+        fig.update_layout(title=f"{sla}h SLA")
+
+        cols[i].plotly_chart(fig, use_container_width=True)
+
+# ---------- DELAY DONUTS ----------
 st.subheader("Καθυστερήσεις")
 
 delay_summary = delivered.groupby(["delay_bucket", "Χρόνος Παράδοσης"]).size().unstack(fill_value=0)
 
-st.dataframe(delay_summary)
+delay_cols = st.columns(3)
+
+mapping = {
+    "delay_1": "1 ημέρα",
+    "delay_2": "2 ημέρες",
+    "delay_3_plus": "3+ ημέρες"
+}
+
+for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
+    if bucket in delay_summary.index:
+        row = delay_summary.loc[bucket]
+
+        fig = px.pie(
+            values=row.values,
+            names=row.index,
+            hole=0.6
+        )
+
+        fig.update_layout(title=mapping[bucket])
+
+        delay_cols[i].plotly_chart(fig, use_container_width=True)
