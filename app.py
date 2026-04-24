@@ -24,7 +24,7 @@ def check_password():
 check_password()
 
 # ---------- LOAD DATA ----------
-data_url = "ΒΑΛΕ_ΕΔΩ_RAW_LINK_DATA"
+data_url = "https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv"
 df = pd.read_csv(data_url)
 
 master = pd.read_csv("master.csv")
