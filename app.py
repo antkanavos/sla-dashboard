@@ -23,13 +23,9 @@ def check_password():
 
 check_password()
 
-# ---------- LOAD DATA ----------
-data_url = st.text_input("https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv")
-
-if data_url:
-    df = pd.read_csv(data_url)
-else:
-    st.stop()
+# ---------- DATA ----------
+data_url = "https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv"
+df = pd.read_csv(data_url)
 
 master = pd.read_csv("master.csv")
 holidays_df = pd.read_csv("holidays.csv")
@@ -160,21 +156,6 @@ delivered = df[
 
 # ---------- SLA LOGIC ----------
 delivered["on_time"] = delivered["working_days"] <= delivered["sla_days"]
-
-delivered["delay_days"] = delivered["working_days"] - delivered["sla_days"]
-delivered["delay_days"] = delivered["delay_days"].clip(lower=0)
-
-def delay_bucket(x):
-    if x == 0:
-        return "on_time"
-    elif x == 1:
-        return "delay_1"
-    elif x == 2:
-        return "delay_2"
-    else:
-        return "delay_3_plus"
-
-delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 
 # ---------- KPIs ----------
 total = len(df_original)
