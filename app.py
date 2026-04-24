@@ -51,22 +51,16 @@ def clean_address(x):
     x = " ".join(x.split())
     return x
 
-# 🔥 FIX ΕΔΩ
 def clean_postcode(x):
     if pd.isna(x):
         return None
-    
     x = str(x)
-    
     x = x.replace(".0", "")
     x = x.replace(" ", "")
     x = x.replace("-", "")
-    
     x = "".join(filter(str.isdigit, x))
-    
     if len(x) >= 5:
         x = x[:5]
-    
     return x
 
 # ---------- KEYS ----------
@@ -88,17 +82,32 @@ master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postco
 master = master.sort_values("Χρόνος Παράδοσης")
 master = master.drop_duplicates(subset=["KEY_CLEAN", "POSTCODE"], keep="first")
 
-# ---------- MERGE ----------
+# ---------- MERGE (KEY + POSTCODE) ----------
 df = df.merge(
     master,
     on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
 
-# 🔥 FIX για το error που είχες
-df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
+# ---------- 🔥 FALLBACK KEY ONLY ----------
+fallback = df[df["Χρόνος Παράδοσης"].isna()].copy()
+
+fallback = fallback.drop(columns=["Χρόνος Παράδοσης"])
+
+fallback = fallback.merge(
+    master[["KEY_CLEAN", "Χρόνος Παράδοσης"]],
+    on="KEY_CLEAN",
+    how="left"
+)
+
+df.loc[fallback.index, "Χρόνος Παράδοσης"] = \
+df.loc[fallback.index, "Χρόνος Παράδοσης"].combine_first(
+    fallback["Χρόνος Παράδοσης"]
+)
 
 # ---------- FUZZY ----------
+df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
+
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
