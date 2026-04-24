@@ -35,29 +35,25 @@ holidays = set(
     pd.to_datetime(holidays_df["date"], dayfirst=True).dt.date
 )
 
-# ---------- CLEAN ----------
+# ---------- CLEAN FUNCTIONS ----------
 def clean_address(x):
     if pd.isna(x):
         return None
-
     x = str(x).upper()
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
     x = x.strip()
     x = " ".join(x.split())
-
     return x
 
 def clean_postcode(x):
     if pd.isna(x):
         return None
-    
     x = str(x)
     x = x.replace(".0", "")
     x = x.strip()
     x = "".join(filter(str.isdigit, x))
-    
     return x
 
 # ---------- KEYS ----------
@@ -69,32 +65,32 @@ df_original = df.copy()
 
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 
-# ---------- POSTCODE ----------
-df["POSTCODE"] = df["Τ.Κ Παράδοσης"].apply(clean_postcode)
-master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postcode)
-
 # ---------- ADDRESS ----------
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 
-# ---------- MASTER DEDUP (KEY + TK) ----------
+# ---------- POSTCODE ----------
+df["POSTCODE"] = df["Τ.Κ Παράδοσης"].apply(clean_postcode)
+master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postcode)
+
+# ---------- MASTER DEDUP ----------
 master = master.sort_values("Χρόνος Παράδοσης")
 master = master.drop_duplicates(subset=["KEY_CLEAN", "POSTCODE"], keep="first")
 
-# ---------- MERGE (KEY + TK) ----------
+# ---------- MERGE ----------
 df = df.merge(
     master,
     on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
 
-# ---------- FUZZY (fallback μόνο αν δεν βρέθηκε SLA) ----------
+# ---------- FUZZY FALLBACK ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
     subset = master[
-    master["KEY_CLEAN"] == row["KEY_CLEAN"]
-]
+        master["KEY_CLEAN"] == row["KEY_CLEAN"]
+    ]
 
     if subset.empty:
         return None
@@ -119,13 +115,11 @@ def fuzzy_match(row):
 
 fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
 
-# 🔥 FIX: καθάρισε τα values
+# FIX dtype
 fuzzy_results = pd.to_numeric(fuzzy_results, errors="coerce")
 
-# 🔥 SAFE update
 df.loc[unmatched.index, "Χρόνος Παράδοσης"] = \
 df.loc[unmatched.index, "Χρόνος Παράδοσης"].combine_first(fuzzy_results)
-st.write("Fuzzy matches:", fuzzy_results.notna().sum())
 
 # ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
@@ -182,7 +176,11 @@ delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 
 # ---------- KPIs ----------
 total = len(df_original)
-delivered_count = len(df_original[df_original["Ημ/νία Παράδοσης"].notna()])
+
+delivered_count = len(
+    df_original[df_original["Ημ/νία Παράδοσης"].notna()]
+)
+
 on_time_count = delivered["on_time"].sum()
 
 sla_percent = (on_time_count / len(delivered) * 100) if len(delivered) else 0
@@ -201,7 +199,8 @@ col5.metric("Missing SLA", missing_sla)
 
 st.divider()
 
-# ---------- DEBUG ----------
+# DEBUG
+st.write("Fuzzy matches:", fuzzy_results.notna().sum())
 st.write("Delivered rows:", len(delivered))
 
 # ---------- SLA DONUTS ----------
@@ -242,7 +241,9 @@ st.subheader("Καθυστερήσεις")
 
 if not delivered.empty:
 
-    delay_summary = delivered.groupby(["delay_bucket", "Χρόνος Παράδοσης"]).size().unstack(fill_value=0)
+    delay_summary = delivered.groupby(
+        ["delay_bucket", "Χρόνος Παράδοσης"]
+    ).size().unstack(fill_value=0)
 
     delay_cols = st.columns(3)
 
