@@ -18,22 +18,21 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu, footer { visibility: hidden; }
+header { visibility: visible !important; background: transparent !important; }
 .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
 section[data-testid="stSidebar"] { background: #1a2235; min-width: 210px !important; max-width: 210px !important; }
 section[data-testid="stSidebar"] * { color: #8fa3c0 !important; }
 
-/* Always show the sidebar toggle button */
-button[data-testid="collapsedControl"] {
+/* Keep sidebar toggle always visible */
+button[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
 }
-/* Sidebar collapse arrow */
-section[data-testid="stSidebar"] button[kind="header"] {
-    display: flex !important;
-    visibility: visible !important;
-}
+/* Hide only the Streamlit deploy/share header content, not the whole header */
+header [data-testid="stToolbar"] { visibility: hidden; }
 
 .kpi-card { background: white; border-radius: 16px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f2f5; }
 .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 6px; }
@@ -229,7 +228,7 @@ def save_snapshot(snap, force_new_id=False):
         "n_new":       snap.get("n_new", 0),
         "n_updated":   snap.get("n_updated", 0),
     })
-    index.sort(key=lambda x: x["uploaded_at"])
+    index.sort(key=lambda x: x.get("uploaded_at", x.get("date", "")))
     _, idx_sha = gh_get("history/index.json")
     ok2 = gh_put("history/index.json",
                  json.dumps(index, ensure_ascii=False, indent=2),
