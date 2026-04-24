@@ -51,13 +51,22 @@ def clean_address(x):
     x = " ".join(x.split())
     return x
 
+# 🔥 FIX ΕΔΩ
 def clean_postcode(x):
     if pd.isna(x):
         return None
+    
     x = str(x)
+    
     x = x.replace(".0", "")
-    x = x.strip()
+    x = x.replace(" ", "")
+    x = x.replace("-", "")
+    
     x = "".join(filter(str.isdigit, x))
+    
+    if len(x) >= 5:
+        x = x[:5]
+    
     return x
 
 # ---------- KEYS ----------
@@ -85,6 +94,8 @@ df = df.merge(
     on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
+
+# 🔥 FIX για το error που είχες
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 
 # ---------- FUZZY ----------
