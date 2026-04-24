@@ -6,5 +6,17 @@
     "on_time": 10615,
     "sla_pct": 97.26,
     "missing_sla": 28
+  },
+  {
+    "snapshot_id": "d7417e6b2d24",
+    "date": "2026-04-23",
+    "uploaded_at": "2026-04-24T20:50:32.394122",
+    "total": 13138,
+    "delivered": 10936,
+    "on_time": 10615,
+    "sla_pct": 97.26,
+    "missing_sla": 28,
+    "n_new": 13138,
+    "n_updated": 0
   }
 ]
