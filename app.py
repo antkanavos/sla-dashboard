@@ -40,7 +40,7 @@ def clean_address(x):
         return None
 
     x = str(x).upper()
-    x = x.replace("-", " ")   # 🔥 FIX
+    x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
     x = x.strip()
@@ -52,12 +52,15 @@ def clean_address(x):
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 
-# ---------- REMOVE NO KEY ----------
+# ---------- REMOVE ROWS WITHOUT KEY ----------
 df = df[df["KEY_CLEAN"].notna()].copy()
 
 # ---------- CLEAN ADDRESSES ----------
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
+
+# ---------- 🔥 DEDUP MASTER ----------
+master = master.drop_duplicates(subset=["KEY_CLEAN", "ADDR_CLEAN"])
 
 # ---------- MERGE ----------
 df = df.merge(
@@ -121,10 +124,10 @@ delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 
 # ---------- KPIs ----------
 total = len(df)
-delivered_count = len(delivered)
+delivered_count = len(df[df["Ημ/νία Παράδοσης"].notna()])  # πραγματικά παραδομένες
 on_time_count = delivered["on_time"].sum()
-sla_percent = (on_time_count / delivered_count * 100) if delivered_count else 0
 
+sla_percent = (on_time_count / len(delivered) * 100) if len(delivered) else 0
 missing_sla = df["sla_days"].isna().sum()
 
 # ---------- UI ----------
@@ -184,11 +187,10 @@ mapping = {
     "delay_3_plus": "3+ ημέρες"
 }
 
-# 🔥 ΣΤΑΘΕΡΑ ΧΡΩΜΑΤΑ
 color_map = {
-    24: "#1f77b4",   # μπλε
-    48: "#ff7f0e",   # πορτοκαλί
-    96: "#d62728"    # κόκκινο
+    24: "#1f77b4",
+    48: "#ff7f0e",
+    96: "#d62728"
 }
 
 for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
@@ -200,7 +202,7 @@ for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
             names=row.index,
             hole=0.6,
             color=row.index,
-            color_discrete_map=color_map  # 🔥 FIX
+            color_discrete_map=color_map
         )
 
         fig.update_layout(title=mapping[bucket])
