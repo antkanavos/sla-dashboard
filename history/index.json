@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2026-04-23",
+    "total": 13138,
+    "delivered": 10936,
+    "on_time": 10615,
+    "sla_pct": 97.26,
+    "missing_sla": 28
+  }
+]
