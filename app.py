@@ -24,7 +24,7 @@ def check_password():
 check_password()
 
 # ---------- LOAD DATA ----------
-data_url = "https://raw.githubusercontent.com/antkanavos/sla-dashboard/refs/heads/main/data.csv"
+data_url = "ΒΑΛΕ_ΕΔΩ_RAW_LINK_DATA"
 df = pd.read_csv(data_url)
 
 master = pd.read_csv("master.csv")
@@ -35,43 +35,34 @@ holidays = set(
     pd.to_datetime(holidays_df["date"], dayfirst=True).dt.date
 )
 
-# ---------- CLEAN FUNCTIONS ----------
+# ---------- CLEAN ----------
 def clean_address(x):
     if pd.isna(x):
         return None
-
     x = str(x).upper()
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
-
-    # 🔥 improvements
     x = x.replace("ΟΔΟΣ", "")
     x = x.replace("ΑΓΙΟΥ", "ΑΓ")
     x = x.replace("ΑΓΙΑΣ", "ΑΓ")
     x = x.replace("ΚΑΙ", "&")
-
     x = x.strip()
     x = " ".join(x.split())
-
     return x
 
 def clean_postcode(x):
     if pd.isna(x):
         return None
-
     x = str(x)
     x = x.replace(".0", "")
     x = x.strip()
     x = "".join(filter(str.isdigit, x))
-
     return x
 
 # ---------- KEYS ----------
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 df = df[df["KEY_CLEAN"].notna()].copy()
-
-# snapshot για metrics
 df_original = df.copy()
 
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
@@ -84,9 +75,13 @@ master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 df["POSTCODE"] = df["Τ.Κ Παράδοσης"].apply(clean_postcode)
 master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postcode)
 
-# ---------- MASTER DEDUP ----------
-master = master.sort_values("Χρόνος Παράδοσης")
-master = master.drop_duplicates(subset=["KEY_CLEAN", "POSTCODE"], keep="first")
+# ---------- 🔥 FIX: MODE SLA ----------
+master = (
+    master
+    .groupby(["KEY_CLEAN", "POSTCODE"])["Χρόνος Παράδοσης"]
+    .agg(lambda x: x.mode()[0])
+    .reset_index()
+)
 
 # ---------- MERGE ----------
 df = df.merge(
@@ -95,44 +90,17 @@ df = df.merge(
     how="left"
 )
 
-# 🔥 ensure exists
-df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
-
 # ---------- FUZZY ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
-    subset = master[
-        master["KEY_CLEAN"] == row["KEY_CLEAN"]
-    ]
+    subset = master[master["KEY_CLEAN"] == row["KEY_CLEAN"]]
 
     if subset.empty:
         return None
 
-    choices = subset["ADDR_CLEAN"].tolist()
-
-    match = process.extractOne(
-        row["ADDR_CLEAN"],
-        choices,
-        scorer=fuzz.token_sort_ratio
-    )
-
-    if match is None:
-        return None
-
-    _, score, idx = match
-
-    # 🔥 πιο χαλαρό threshold
-    if score >= 75:
-        return subset.iloc[idx]["Χρόνος Παράδοσης"]
-
+    # επειδή χάσαμε address στο aggregation, δεν έχει νόημα εδώ πλέον
     return None
-
-fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
-fuzzy_results = pd.to_numeric(fuzzy_results, errors="coerce")
-
-df.loc[unmatched.index, "Χρόνος Παράδοσης"] = \
-df.loc[unmatched.index, "Χρόνος Παράδοσης"].combine_first(fuzzy_results)
 
 # ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
@@ -209,8 +177,3 @@ col2.metric("Παραδόθηκαν", delivered_count)
 col3.metric("Εντός SLA", on_time_count)
 col4.metric("SLA %", f"{sla_percent:.2f}%")
 col5.metric("Missing SLA", missing_sla)
-
-st.divider()
-
-st.write("Fuzzy matches:", fuzzy_results.notna().sum())
-st.write("Delivered rows:", len(delivered))
