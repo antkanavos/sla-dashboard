@@ -58,25 +58,32 @@ master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 # ---------- REMOVE NO KEY ----------
 df = df[df["KEY_CLEAN"].notna()].copy()
 
-# ---------- CLEAN ADDR ----------
+# ---------- CLEAN ADDRESSES ----------
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 
-# ---------- DEDUP MASTER ----------
-master = master.drop_duplicates(subset=["KEY_CLEAN", "ADDR_CLEAN"])
+# ---------- POSTCODE ----------
+df["POSTCODE"] = df["Τ.Κ Παράδοσης"].astype(str).str.strip()
+master["POSTCODE"] = master["Account : Site : Site PostCode"].astype(str).str.strip()
 
-# ---------- EXACT MERGE ----------
+# ---------- DEDUP MASTER ----------
+master = master.drop_duplicates(subset=["KEY_CLEAN", "ADDR_CLEAN", "POSTCODE"])
+
+# ---------- EXACT MERGE (3 KEYS) ----------
 df = df.merge(
     master,
-    on=["KEY_CLEAN", "ADDR_CLEAN"],
+    on=["KEY_CLEAN", "ADDR_CLEAN", "POSTCODE"],
     how="left"
 )
 
-# ---------- FUZZY MATCH ----------
+# ---------- FUZZY MATCH (fallback) ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
-    subset = master[master["KEY_CLEAN"] == row["KEY_CLEAN"]]
+    subset = master[
+        (master["KEY_CLEAN"] == row["KEY_CLEAN"]) &
+        (master["POSTCODE"] == row["POSTCODE"])
+    ]
 
     if subset.empty:
         return None
