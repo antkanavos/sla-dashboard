@@ -23,26 +23,26 @@ html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
 section[data-testid="stSidebar"] { background: #1a2235; min-width: 210px !important; max-width: 210px !important; }
 section[data-testid="stSidebar"] * { color: #8fa3c0 !important; }
 
-.kpi-card { background: white; border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); border: 1px solid #f0f2f5; }
-.kpi-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 4px; }
-.kpi-value { font-size: 30px; font-weight: 800; color: #1a2235; line-height: 1.1; }
-.kpi-sub { font-size: 11px; color: #8fa3c0; margin-top: 3px; font-weight: 500; }
+.kpi-card { background: white; border-radius: 16px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f2f5; }
+.kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 6px; }
+.kpi-value { font-size: 36px; font-weight: 800; color: #1a2235; line-height: 1.1; }
+.kpi-sub { font-size: 12px; color: #8fa3c0; margin-top: 5px; font-weight: 500; }
 .kpi-purple { color: #7c3aed !important; }
 
-.section-header { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1a2235; }
-.section-sub { font-size: 11px; color: #8fa3c0; font-weight: 500; margin-bottom: 12px; }
+.section-header { font-size: 13px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1a2235; }
+.section-sub { font-size: 12px; color: #8fa3c0; font-weight: 500; margin-bottom: 14px; }
 
 .chart-card { background: white; border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); border: 1px solid #f0f2f5; }
-.chart-label { font-size: 11px; font-weight: 700; color: #8fa3c0; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
-.legend-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #444; margin-bottom: 3px; font-weight: 500; }
-.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.total-lbl { font-size: 10px; color: #8fa3c0; font-weight: 500; margin-top: 6px; }
-.total-val { font-size: 12px; font-weight: 700; color: #1a2235; }
+.chart-label { font-size: 12px; font-weight: 700; color: #8fa3c0; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+.legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #444; margin-bottom: 4px; font-weight: 500; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.total-lbl { font-size: 11px; color: #8fa3c0; font-weight: 500; margin-top: 8px; }
+.total-val { font-size: 14px; font-weight: 700; color: #1a2235; }
 
-.month-card { background: white; border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); border: 1px solid #f0f2f5; }
-.month-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 10px; }
-.bar-lbl { font-size: 11px; color: #444; font-weight: 500; margin-bottom: 2px; }
-.bar-wrap { background: #f0f2f5; border-radius: 6px; height: 7px; margin-bottom: 9px; overflow: hidden; }
+.month-card { background: white; border-radius: 14px; padding: 20px 22px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); border: 1px solid #f0f2f5; }
+.month-title { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 12px; }
+.bar-lbl { font-size: 12px; color: #444; font-weight: 500; margin-bottom: 3px; }
+.bar-wrap { background: #f0f2f5; border-radius: 6px; height: 9px; margin-bottom: 11px; overflow: hidden; }
 
 .hist-card { background: white; border-radius: 14px; padding: 14px 18px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); border: 1px solid #f0f2f5; margin-bottom: 10px; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
@@ -308,7 +308,7 @@ if "Επισκόπηση" in page:
     for col,icon,lbl,val,sub,cls in kpi_data:
         with col:
             st.markdown(f"""<div class="kpi-card">
-                <div style="font-size:20px;margin-bottom:6px;">{icon}</div>
+                <div style="font-size:26px;margin-bottom:8px;">{icon}</div>
                 <div class="kpi-label">{lbl}</div>
                 <div class="kpi-value {cls}">{val}</div>
                 <div class="kpi-sub">{sub}</div>
@@ -316,22 +316,28 @@ if "Επισκόπηση" in page:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # Donut helper
-    def donut(pct, c_in, c_out, size=148):
-        fig = go.Figure(go.Pie(
-            values=[pct, 100-pct], hole=0.68,
-            marker_colors=[c_in, c_out],
-            textinfo="none", hoverinfo="none", direction="clockwise", sort=False,
-        ))
-        fig.update_layout(
-            margin=dict(t=0,b=0,l=0,r=0), showlegend=False,
-            height=size, width=size,
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            annotations=[dict(text=f"<b>{pct:.1f}%</b>", x=0.5, y=0.5,
-                font_size=15, showarrow=False,
-                font=dict(family="Plus Jakarta Sans", color="#1a2235"))]
-        )
-        return fig
+    # Donut helper — renders as full-width SVG inside a white card, no plotly widget
+    def donut_html(pct, c_in, c_out, label):
+        """Pure HTML/SVG donut — no Streamlit widget ID issues, scales with column"""
+        r = 54; cx = cy = 70; stroke = 18
+        circumference = 2 * 3.14159 * r
+        filled = circumference * pct / 100
+        gap    = circumference - filled
+        return f"""
+        <div style="text-align:center; padding: 8px 0 4px;">
+            <div style="font-size:12px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">{label}</div>
+            <svg viewBox="0 0 140 140" width="140" height="140" style="display:block;margin:0 auto;">
+                <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
+                <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
+                    stroke-dasharray="{filled:.2f} {gap:.2f}"
+                    stroke-linecap="round"
+                    transform="rotate(-90 {cx} {cy})"/>
+                <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
+                    font-family="Plus Jakarta Sans, sans-serif" font-size="18" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+                <text x="{cx}" y="{cy+20}" text-anchor="middle"
+                    font-family="Plus Jakarta Sans, sans-serif" font-size="9" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+            </svg>
+        </div>"""
 
     col_l, col_r = st.columns(2)
 
@@ -344,16 +350,19 @@ if "Επισκόπηση" in page:
             with col:
                 g = delivered[delivered["sla_days"]==sd]
                 if not len(g):
-                    st.markdown(f'<div class="chart-label">{lbl}</div><div style="color:#ccc;font-size:11px;margin-top:8px;">Δεν υπάρχουν</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="padding:12px;background:white;border-radius:12px;border:1px solid #f0f2f5;"><div class="chart-label">{lbl}</div><div style="color:#ccc;font-size:11px;margin-top:8px;">Δεν υπάρχουν</div></div>', unsafe_allow_html=True)
                     continue
                 ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
-                st.markdown(f'<div class="chart-label">{lbl}</div>', unsafe_allow_html=True)
-                st.plotly_chart(donut(pct,"#22c55e","#fee2e2"), use_container_width=False)
                 st.markdown(f"""
-                <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>Εντός &nbsp;<b>{ot:,}</b> ({pct:.2f}%)</div>
-                <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>Εκτός &nbsp;<b>{lat:,}</b> ({100-pct:.2f}%)</div>
-                <div class="total-lbl">Σύνολο</div><div class="total-val">{len(g):,}</div>
-                """, unsafe_allow_html=True)
+                <div style="background:white;border-radius:14px;padding:14px 12px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;">
+                    {donut_html(pct, "#22c55e", "#fee2e2", lbl)}
+                    <div style="margin-top:10px;padding:0 4px;">
+                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>Εντός &nbsp;<b>{ot:,}</b> ({pct:.2f}%)</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>Εκτός &nbsp;<b>{lat:,}</b> ({100-pct:.2f}%)</div>
+                        <div class="total-lbl" style="margin-top:8px;">Σύνολο παραδοθέντων</div>
+                        <div class="total-val">{len(g):,}</div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
 
     # Right: Delays
     with col_r:
@@ -361,26 +370,30 @@ if "Επισκόπηση" in page:
         st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
         c1,c2,c3 = st.columns(3)
         td = len(delivered)
-        for col, days, lbl, color in [
-            (c1, "==1","1 ημέρα","#f97316"),
-            (c2, "==2","2 ημέρες","#f59e0b"),
-            (c3, ">=3","3+ ημέρες","#ef4444"),
-        ]:
+        delay_configs = [
+            (c1, 1,  False, "1 ημέρα",   "#f97316"),
+            (c2, 2,  False, "2 ημέρες",  "#f59e0b"),
+            (c3, 3,  True,  "3+ ημέρες", "#ef4444"),
+        ]
+        for col, days, use_gte, lbl, color in delay_configs:
             with col:
-                dd  = delivered[eval(f"delivered['delay_days']{days}")]
+                dd  = delivered[delivered["delay_days"] >= days] if use_gte else delivered[delivered["delay_days"] == days]
                 n   = len(dd)
                 pct = n/td*100 if td else 0
                 d24 = len(dd[dd["sla_days"]==1]); d48 = len(dd[dd["sla_days"]==2]); d96 = len(dd[dd["sla_days"]==4])
                 p24 = round(d24/n*100,2) if n else 0; p48 = round(d48/n*100,2) if n else 0; p96 = round(d96/n*100,2) if n else 0
-                st.markdown(f'<div class="chart-label">{lbl} καθυστέρηση</div>', unsafe_allow_html=True)
-                st.plotly_chart(donut(pct, color, "#f0f2f5"), use_container_width=False)
                 st.markdown(f"""
-                <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>24h &nbsp;<b>{d24}</b> ({p24:.1f}%)</div>
-                <div class="legend-row"><span class="legend-dot" style="background:{color}"></span>48h &nbsp;<b>{d48}</b> ({p48:.1f}%)</div>
-                <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>96h &nbsp;<b>{d96}</b> ({p96:.1f}%)</div>
-                <div class="total-lbl">Σύνολο με {lbl}</div><div class="total-val">{n:,}</div>
-                """, unsafe_allow_html=True)
-        st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:4px;'>Επί συνόλου παραδοθέντων ({td:,})</div>", unsafe_allow_html=True)
+                <div style="background:white;border-radius:14px;padding:14px 12px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;">
+                    {donut_html(pct, color, "#f0f2f5", lbl + " καθυστέρηση")}
+                    <div style="margin-top:10px;padding:0 4px;">
+                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>24h &nbsp;<b>{d24}</b> ({p24:.1f}%)</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:{color}"></span>48h &nbsp;<b>{d48}</b> ({p48:.1f}%)</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>96h &nbsp;<b>{d96}</b> ({p96:.1f}%)</div>
+                        <div class="total-lbl" style="margin-top:8px;">Σύνολο με {lbl}</div>
+                        <div class="total-val">{n:,}</div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:6px;'>Επί συνόλου παραδοθέντων ({td:,})</div>", unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -412,9 +425,9 @@ if "Επισκόπηση" in page:
             st.markdown(f"""<div class="month-card">
                 <div class="month-title">{title}</div>
                 <div style="margin-bottom:14px;">
-                    <div style="font-size:10px;color:#8fa3c0;font-weight:600;">SLA % (ΕΝΤΟΣ)</div>
-                    <div style="font-size:24px;font-weight:800;color:#1a2235;">{mm['sla_pct']:.2f}%</div>
-                    <div style="font-size:10px;color:#8fa3c0;">{mm['on_time']:,} / {mm['delivered']:,}</div>
+                    <div style="font-size:11px;color:#8fa3c0;font-weight:600;">SLA % (ΕΝΤΟΣ)</div>
+                    <div style="font-size:28px;font-weight:800;color:#1a2235;">{mm['sla_pct']:.2f}%</div>
+                    <div style="font-size:12px;color:#8fa3c0;">{mm['on_time']:,} / {mm['delivered']:,}</div>
                 </div>
                 {bar("24h (1 εργάσιμη)",p24)}{bar("48h (2 εργάσιμες)",p48)}{bar("96h (4 εργάσιμες)",p96)}
             </div>""", unsafe_allow_html=True)
