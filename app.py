@@ -44,8 +44,6 @@ def clean_address(x):
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
-    x = x.replace("ΛΕΩΦ", "Λ")
-    x = x.replace("Λ.", "Λ")
     x = x.strip()
     x = " ".join(x.split())
 
@@ -64,37 +62,33 @@ def clean_postcode(x):
 
 # ---------- KEYS ----------
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
-
-# ❗ κρατάμε ΜΟΝΟ valid KEY
 df = df[df["KEY_CLEAN"].notna()].copy()
 
-# ✅ ΕΔΩ σωστό snapshot
+# σωστό snapshot για metrics
 df_original = df.copy()
 
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
-
-# ---------- CLEAN ADDR ----------
-df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
-master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 
 # ---------- POSTCODE ----------
 df["POSTCODE"] = df["Τ.Κ Παράδοσης"].apply(clean_postcode)
 master["POSTCODE"] = master["Account : Site : Site PostCode"].apply(clean_postcode)
 
-# ---------- DEDUP MASTER ----------
-master = master.drop_duplicates(subset=["KEY_CLEAN", "ADDR_CLEAN", "POSTCODE"])
+# ---------- ADDRESS ----------
+df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
+master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 
-# ---------- MERGE ----------
+# ---------- MASTER DEDUP (KEY + TK) ----------
+master = master.sort_values("Χρόνος Παράδοσης")
+master = master.drop_duplicates(subset=["KEY_CLEAN", "POSTCODE"], keep="first")
+
+# ---------- MERGE (KEY + TK) ----------
 df = df.merge(
     master,
-    on=["KEY_CLEAN", "ADDR_CLEAN", "POSTCODE"],
+    on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
 
-# ❗ CRITICAL FIX: remove duplication
-df = df.drop_duplicates(subset=["Αριθμός"])
-
-# ---------- FUZZY ----------
+# ---------- FUZZY (fallback μόνο αν δεν βρέθηκε SLA) ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
@@ -183,11 +177,7 @@ delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 
 # ---------- KPIs ----------
 total = len(df_original)
-
-delivered_count = len(
-    df_original[df_original["Ημ/νία Παράδοσης"].notna()]
-)
-
+delivered_count = len(df_original[df_original["Ημ/νία Παράδοσης"].notna()])
 on_time_count = delivered["on_time"].sum()
 
 sla_percent = (on_time_count / len(delivered) * 100) if len(delivered) else 0
@@ -203,3 +193,78 @@ col2.metric("Παραδόθηκαν", delivered_count)
 col3.metric("Εντός SLA", on_time_count)
 col4.metric("SLA %", f"{sla_percent:.2f}%")
 col5.metric("Missing SLA", missing_sla)
+
+st.divider()
+
+# ---------- DEBUG ----------
+st.write("Delivered rows:", len(delivered))
+
+# ---------- SLA DONUTS ----------
+st.subheader("Ανάλυση SLA")
+
+if not delivered.empty:
+
+    sla_summary = delivered.groupby("Χρόνος Παράδοσης").agg(
+        total=("Αριθμός", "count"),
+        on_time=("on_time", "sum")
+    )
+
+    sla_summary["late"] = sla_summary["total"] - sla_summary["on_time"]
+
+    cols = st.columns(3)
+
+    for i, sla in enumerate([24, 48, 96]):
+        if sla in sla_summary.index:
+            row = sla_summary.loc[sla]
+
+            fig = px.pie(
+                values=[row["on_time"], row["late"]],
+                names=["Εντός SLA", "Εκτός SLA"],
+                hole=0.6,
+                color=["Εντός SLA", "Εκτός SLA"],
+                color_discrete_map={
+                    "Εντός SLA": "green",
+                    "Εκτός SLA": "red"
+                }
+            )
+
+            fig.update_layout(title=f"{sla}h SLA")
+
+            cols[i].plotly_chart(fig, use_container_width=True)
+
+# ---------- DELAY DONUTS ----------
+st.subheader("Καθυστερήσεις")
+
+if not delivered.empty:
+
+    delay_summary = delivered.groupby(["delay_bucket", "Χρόνος Παράδοσης"]).size().unstack(fill_value=0)
+
+    delay_cols = st.columns(3)
+
+    mapping = {
+        "delay_1": "1 ημέρα",
+        "delay_2": "2 ημέρες",
+        "delay_3_plus": "3+ ημέρες"
+    }
+
+    color_map = {
+        24: "#1f77b4",
+        48: "#ff7f0e",
+        96: "#d62728"
+    }
+
+    for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
+        if bucket in delay_summary.index:
+            row = delay_summary.loc[bucket]
+
+            fig = px.pie(
+                values=row.values,
+                names=row.index,
+                hole=0.6,
+                color=row.index,
+                color_discrete_map=color_map
+            )
+
+            fig.update_layout(title=mapping[bucket])
+
+            delay_cols[i].plotly_chart(fig, use_container_width=True)
