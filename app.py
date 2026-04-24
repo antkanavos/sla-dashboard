@@ -39,32 +39,39 @@ holidays = set(
 def clean_address(x):
     if pd.isna(x):
         return None
+
     x = str(x).upper()
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
+
+    # 🔥 improvements
     x = x.replace("ΟΔΟΣ", "")
-x = x.replace("ΑΓΙΟΥ", "ΑΓ")
-x = x.replace("ΑΓΙΑΣ", "ΑΓ")
-x = x.replace("ΚΑΙ", "&")	
+    x = x.replace("ΑΓΙΟΥ", "ΑΓ")
+    x = x.replace("ΑΓΙΑΣ", "ΑΓ")
+    x = x.replace("ΚΑΙ", "&")
+
     x = x.strip()
     x = " ".join(x.split())
+
     return x
 
 def clean_postcode(x):
     if pd.isna(x):
         return None
+
     x = str(x)
     x = x.replace(".0", "")
     x = x.strip()
     x = "".join(filter(str.isdigit, x))
+
     return x
 
 # ---------- KEYS ----------
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 df = df[df["KEY_CLEAN"].notna()].copy()
 
-# σωστό snapshot για metrics
+# snapshot για metrics
 df_original = df.copy()
 
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
@@ -87,17 +94,17 @@ df = df.merge(
     on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
-# 🔥 FIX
+
+# 🔥 ensure exists
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 
-# ---------- FUZZY FALLBACK ----------
+# ---------- FUZZY ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
     subset = master[
-    (master["KEY_CLEAN"] == row["KEY_CLEAN"]) &
-    (master["POSTCODE"].notna())
-]
+        master["KEY_CLEAN"] == row["KEY_CLEAN"]
+    ]
 
     if subset.empty:
         return None
@@ -115,14 +122,13 @@ def fuzzy_match(row):
 
     _, score, idx = match
 
+    # 🔥 πιο χαλαρό threshold
     if score >= 75:
         return subset.iloc[idx]["Χρόνος Παράδοσης"]
 
     return None
 
 fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
-
-# FIX dtype
 fuzzy_results = pd.to_numeric(fuzzy_results, errors="coerce")
 
 df.loc[unmatched.index, "Χρόνος Παράδοσης"] = \
@@ -206,78 +212,5 @@ col5.metric("Missing SLA", missing_sla)
 
 st.divider()
 
-# DEBUG
 st.write("Fuzzy matches:", fuzzy_results.notna().sum())
 st.write("Delivered rows:", len(delivered))
-
-# ---------- SLA DONUTS ----------
-st.subheader("Ανάλυση SLA")
-
-if not delivered.empty:
-
-    sla_summary = delivered.groupby("Χρόνος Παράδοσης").agg(
-        total=("Αριθμός", "count"),
-        on_time=("on_time", "sum")
-    )
-
-    sla_summary["late"] = sla_summary["total"] - sla_summary["on_time"]
-
-    cols = st.columns(3)
-
-    for i, sla in enumerate([24, 48, 96]):
-        if sla in sla_summary.index:
-            row = sla_summary.loc[sla]
-
-            fig = px.pie(
-                values=[row["on_time"], row["late"]],
-                names=["Εντός SLA", "Εκτός SLA"],
-                hole=0.6,
-                color=["Εντός SLA", "Εκτός SLA"],
-                color_discrete_map={
-                    "Εντός SLA": "green",
-                    "Εκτός SLA": "red"
-                }
-            )
-
-            fig.update_layout(title=f"{sla}h SLA")
-
-            cols[i].plotly_chart(fig, use_container_width=True)
-
-# ---------- DELAY DONUTS ----------
-st.subheader("Καθυστερήσεις")
-
-if not delivered.empty:
-
-    delay_summary = delivered.groupby(
-        ["delay_bucket", "Χρόνος Παράδοσης"]
-    ).size().unstack(fill_value=0)
-
-    delay_cols = st.columns(3)
-
-    mapping = {
-        "delay_1": "1 ημέρα",
-        "delay_2": "2 ημέρες",
-        "delay_3_plus": "3+ ημέρες"
-    }
-
-    color_map = {
-        24: "#1f77b4",
-        48: "#ff7f0e",
-        96: "#d62728"
-    }
-
-    for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
-        if bucket in delay_summary.index:
-            row = delay_summary.loc[bucket]
-
-            fig = px.pie(
-                values=row.values,
-                names=row.index,
-                hole=0.6,
-                color=row.index,
-                color_discrete_map=color_map
-            )
-
-            fig.update_layout(title=mapping[bucket])
-
-            delay_cols[i].plotly_chart(fig, use_container_width=True)
