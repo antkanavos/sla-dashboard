@@ -34,28 +34,43 @@ holidays = set(
     pd.to_datetime(holidays_df["date"], dayfirst=True).dt.date
 )
 
-# ---------- CLEAN KEYS ----------
+# ---------- CLEAN FUNCTIONS ----------
+def clean_address(x):
+    if pd.isna(x):
+        return None
+
+    x = str(x).upper()
+    x = x.replace("-", " ")   # 🔥 FIX
+    x = x.replace(",", "")
+    x = x.replace(".", "")
+    x = x.strip()
+    x = " ".join(x.split())
+
+    return x
+
+# ---------- KEYS ----------
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 
-# ---------- REMOVE ROWS WITHOUT KEY ----------
-initial_rows = len(df)
+# ---------- REMOVE NO KEY ----------
 df = df[df["KEY_CLEAN"].notna()].copy()
-removed_rows = initial_rows - len(df)
 
-# ---------- MERGE WITH ADDRESS ----------
+# ---------- CLEAN ADDRESSES ----------
+df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
+master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
+
+# ---------- MERGE ----------
 df = df.merge(
     master,
-    left_on=["KEY_CLEAN", "Δ/νση Παράδοσης"],
-    right_on=["KEY_CLEAN", "Full Address"],
+    on=["KEY_CLEAN", "ADDR_CLEAN"],
     how="left"
 )
 
-# ---------- PARSE DATES ----------
+# ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
 df["Ημ/νία Παράδοσης"] = pd.to_datetime(df["Ημ/νία Παράδοσης"], dayfirst=True, errors="coerce")
 
-# ---------- SLA DAYS ----------
+# ---------- SLA ----------
 def sla_to_days(x):
     return {24: 1, 48: 2, 96: 4}.get(x, None)
 
@@ -80,13 +95,13 @@ df["working_days"] = df.apply(
     axis=1
 )
 
-# ---------- DELIVERED (ONLY VALID SLA) ----------
+# ---------- DELIVERED ----------
 delivered = df[
     (df["Ημ/νία Παράδοσης"].notna()) &
     (df["sla_days"].notna())
 ].copy()
 
-# ---------- SLA ----------
+# ---------- SLA LOGIC ----------
 delivered["on_time"] = delivered["working_days"] <= delivered["sla_days"]
 
 delivered["delay_days"] = delivered["working_days"] - delivered["sla_days"]
@@ -118,7 +133,7 @@ st.title("📦 SLA Dashboard")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 col1.metric("Σύνολο", total)
-col2.metric("Παραδόθηκαν (valid SLA)", delivered_count)
+col2.metric("Παραδόθηκαν", delivered_count)
 col3.metric("Εντός SLA", on_time_count)
 col4.metric("SLA %", f"{sla_percent:.2f}%")
 col5.metric("Missing SLA", missing_sla)
@@ -169,10 +184,11 @@ mapping = {
     "delay_3_plus": "3+ ημέρες"
 }
 
+# 🔥 ΣΤΑΘΕΡΑ ΧΡΩΜΑΤΑ
 color_map = {
-    24: "#1f77b4",
-    48: "#ff7f0e",
-    96: "#d62728"
+    24: "#1f77b4",   # μπλε
+    48: "#ff7f0e",   # πορτοκαλί
+    96: "#d62728"    # κόκκινο
 }
 
 for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
@@ -184,7 +200,7 @@ for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
             names=row.index,
             hole=0.6,
             color=row.index,
-            color_discrete_map=color_map
+            color_discrete_map=color_map  # 🔥 FIX
         )
 
         fig.update_layout(title=mapping[bucket])
