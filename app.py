@@ -93,9 +93,8 @@ unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
     subset = master[
-        (master["KEY_CLEAN"] == row["KEY_CLEAN"]) &
-        (master["POSTCODE"] == row["POSTCODE"])
-    ]
+    master["KEY_CLEAN"] == row["KEY_CLEAN"]
+]
 
     if subset.empty:
         return None
