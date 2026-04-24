@@ -120,7 +120,13 @@ def fuzzy_match(row):
 
 fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
 
-df.loc[unmatched.index, "Χρόνος Παράδοσης"] = df.loc[unmatched.index, "Χρόνος Παράδοσης"].fillna(fuzzy_results)
+# 🔥 FIX: καθάρισε τα values
+fuzzy_results = pd.to_numeric(fuzzy_results, errors="coerce")
+
+# 🔥 SAFE update
+df.loc[unmatched.index, "Χρόνος Παράδοσης"] = \
+df.loc[unmatched.index, "Χρόνος Παράδοσης"].combine_first(fuzzy_results)
+st.write("Fuzzy matches:", fuzzy_results.notna().sum())
 
 # ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
