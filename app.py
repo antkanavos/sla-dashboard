@@ -177,7 +177,21 @@ delivered = df[
 
 # ---------- SLA LOGIC ----------
 delivered["on_time"] = delivered["working_days"] <= delivered["sla_days"]
+# ---------- DELAYS ----------
+delivered["delay_days"] = delivered["working_days"] - delivered["sla_days"]
+delivered["delay_days"] = delivered["delay_days"].clip(lower=0)
 
+def delay_bucket(x):
+    if x == 0:
+        return "On time"
+    elif x == 1:
+        return "1 day"
+    elif x == 2:
+        return "2 days"
+    else:
+        return "3+ days"
+
+delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 # ---------- KPIs ----------
 total = len(df_original)
 
@@ -205,3 +219,10 @@ st.divider()
 
 st.write("Fuzzy matches:", fuzzy_results.notna().sum())
 st.write("Delivered rows:", len(delivered))
+st.subheader("Καθυστερήσεις")
+
+delay_counts = delivered["delay_bucket"].value_counts().reset_index()
+delay_counts.columns = ["Bucket", "Count"]
+
+fig = px.pie(delay_counts, names="Bucket", values="Count", hole=0.5)
+st.plotly_chart(fig, use_container_width=True)
