@@ -38,7 +38,18 @@ holidays = set(
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 
-df = df.merge(master, on="KEY_CLEAN", how="left")
+# ---------- REMOVE ROWS WITHOUT KEY ----------
+initial_rows = len(df)
+df = df[df["KEY_CLEAN"].notna()].copy()
+removed_rows = initial_rows - len(df)
+
+# ---------- MERGE WITH ADDRESS ----------
+df = df.merge(
+    master,
+    left_on=["KEY_CLEAN", "Δ/νση Παράδοσης"],
+    right_on=["KEY_CLEAN", "Full Address"],
+    how="left"
+)
 
 # ---------- PARSE DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
@@ -69,8 +80,11 @@ df["working_days"] = df.apply(
     axis=1
 )
 
-# ---------- DELIVERED ----------
-delivered = df[df["Ημ/νία Παράδοσης"].notna()].copy()
+# ---------- DELIVERED (ONLY VALID SLA) ----------
+delivered = df[
+    (df["Ημ/νία Παράδοσης"].notna()) &
+    (df["sla_days"].notna())
+].copy()
 
 # ---------- SLA ----------
 delivered["on_time"] = delivered["working_days"] <= delivered["sla_days"]
@@ -96,15 +110,18 @@ delivered_count = len(delivered)
 on_time_count = delivered["on_time"].sum()
 sla_percent = (on_time_count / delivered_count * 100) if delivered_count else 0
 
+missing_sla = df["sla_days"].isna().sum()
+
 # ---------- UI ----------
 st.title("📦 SLA Dashboard")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 col1.metric("Σύνολο", total)
-col2.metric("Παραδόθηκαν", delivered_count)
+col2.metric("Παραδόθηκαν (valid SLA)", delivered_count)
 col3.metric("Εντός SLA", on_time_count)
 col4.metric("SLA %", f"{sla_percent:.2f}%")
+col5.metric("Missing SLA", missing_sla)
 
 st.divider()
 
@@ -127,7 +144,12 @@ for i, sla in enumerate([24, 48, 96]):
         fig = px.pie(
             values=[row["on_time"], row["late"]],
             names=["Εντός SLA", "Εκτός SLA"],
-            hole=0.6
+            hole=0.6,
+            color=["Εντός SLA", "Εκτός SLA"],
+            color_discrete_map={
+                "Εντός SLA": "green",
+                "Εκτός SLA": "red"
+            }
         )
 
         fig.update_layout(title=f"{sla}h SLA")
@@ -147,6 +169,12 @@ mapping = {
     "delay_3_plus": "3+ ημέρες"
 }
 
+color_map = {
+    24: "#1f77b4",
+    48: "#ff7f0e",
+    96: "#d62728"
+}
+
 for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
     if bucket in delay_summary.index:
         row = delay_summary.loc[bucket]
@@ -154,7 +182,9 @@ for i, bucket in enumerate(["delay_1", "delay_2", "delay_3_plus"]):
         fig = px.pie(
             values=row.values,
             names=row.index,
-            hole=0.6
+            hole=0.6,
+            color=row.index,
+            color_discrete_map=color_map
         )
 
         fig.update_layout(title=mapping[bucket])
