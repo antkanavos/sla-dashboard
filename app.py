@@ -85,6 +85,7 @@ df = df.merge(
     on=["KEY_CLEAN", "POSTCODE"],
     how="left"
 )
+df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 
 # ---------- FUZZY ----------
 unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
