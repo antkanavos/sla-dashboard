@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
+from rapidfuzz import process, fuzz
 
 st.set_page_config(layout="wide")
 
@@ -34,7 +35,7 @@ holidays = set(
     pd.to_datetime(holidays_df["date"], dayfirst=True).dt.date
 )
 
-# ---------- CLEAN FUNCTIONS ----------
+# ---------- CLEAN ----------
 def clean_address(x):
     if pd.isna(x):
         return None
@@ -43,6 +44,8 @@ def clean_address(x):
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
+    x = x.replace("ΛΕΩΦ", "Λ")
+    x = x.replace("Λ.", "Λ")
     x = x.strip()
     x = " ".join(x.split())
 
@@ -52,22 +55,55 @@ def clean_address(x):
 df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
 master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
 
-# ---------- REMOVE ROWS WITHOUT KEY ----------
+# ---------- REMOVE NO KEY ----------
 df = df[df["KEY_CLEAN"].notna()].copy()
 
-# ---------- CLEAN ADDRESSES ----------
+# ---------- CLEAN ADDR ----------
 df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_address)
 master["ADDR_CLEAN"] = master["Full Address"].apply(clean_address)
 
-# ---------- 🔥 DEDUP MASTER ----------
+# ---------- DEDUP MASTER ----------
 master = master.drop_duplicates(subset=["KEY_CLEAN", "ADDR_CLEAN"])
 
-# ---------- MERGE ----------
+# ---------- EXACT MERGE ----------
 df = df.merge(
     master,
     on=["KEY_CLEAN", "ADDR_CLEAN"],
     how="left"
 )
+
+# ---------- FUZZY MATCH ----------
+unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
+
+def fuzzy_match(row):
+    subset = master[master["KEY_CLEAN"] == row["KEY_CLEAN"]]
+
+    if subset.empty:
+        return None
+
+    choices = subset["ADDR_CLEAN"].tolist()
+
+    match = process.extractOne(
+        row["ADDR_CLEAN"],
+        choices,
+        scorer=fuzz.token_sort_ratio
+    )
+
+    if match is None:
+        return None
+
+    matched_text, score, idx = match
+
+    if score >= 85:
+        return subset.iloc[idx]["Χρόνος Παράδοσης"]
+
+    return None
+
+# apply fuzzy
+fuzzy_results = unmatched.apply(fuzzy_match, axis=1)
+
+# fill back
+df.loc[unmatched.index, "Χρόνος Παράδοσης"] = df.loc[unmatched.index, "Χρόνος Παράδοσης"].fillna(fuzzy_results)
 
 # ---------- DATES ----------
 df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True)
@@ -124,7 +160,7 @@ delivered["delay_bucket"] = delivered["delay_days"].apply(delay_bucket)
 
 # ---------- KPIs ----------
 total = len(df)
-delivered_count = len(df[df["Ημ/νία Παράδοσης"].notna()])  # πραγματικά παραδομένες
+delivered_count = len(df[df["Ημ/νία Παράδοσης"].notna()])
 on_time_count = delivered["on_time"].sum()
 
 sla_percent = (on_time_count / len(delivered) * 100) if len(delivered) else 0
