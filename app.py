@@ -43,6 +43,10 @@ def clean_address(x):
     x = x.replace("-", " ")
     x = x.replace(",", "")
     x = x.replace(".", "")
+    x = x.replace("ΟΔΟΣ", "")
+x = x.replace("ΑΓΙΟΥ", "ΑΓ")
+x = x.replace("ΑΓΙΑΣ", "ΑΓ")
+x = x.replace("ΚΑΙ", "&")	
     x = x.strip()
     x = " ".join(x.split())
     return x
@@ -91,8 +95,9 @@ unmatched = df[df["Χρόνος Παράδοσης"].isna()].copy()
 
 def fuzzy_match(row):
     subset = master[
-        master["KEY_CLEAN"] == row["KEY_CLEAN"]
-    ]
+    (master["KEY_CLEAN"] == row["KEY_CLEAN"]) &
+    (master["POSTCODE"].notna())
+]
 
     if subset.empty:
         return None
@@ -110,7 +115,7 @@ def fuzzy_match(row):
 
     _, score, idx = match
 
-    if score >= 85:
+    if score >= 75:
         return subset.iloc[idx]["Χρόνος Παράδοσης"]
 
     return None
