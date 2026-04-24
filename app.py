@@ -11,7 +11,7 @@ from rapidfuzz import process, fuzz
 from datetime import datetime, date
 from collections import defaultdict
 
-st.set_page_config(layout="wide", page_title="SLA Dashboard", page_icon="📦")
+st.set_page_config(layout="wide", page_title="SLA Dashboard", page_icon="📦", initial_sidebar_state="expanded")
 
 # ---------- CSS ----------
 st.markdown("""
@@ -22,6 +22,18 @@ html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
 .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
 section[data-testid="stSidebar"] { background: #1a2235; min-width: 210px !important; max-width: 210px !important; }
 section[data-testid="stSidebar"] * { color: #8fa3c0 !important; }
+
+/* Always show the sidebar toggle button */
+button[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+/* Sidebar collapse arrow */
+section[data-testid="stSidebar"] button[kind="header"] {
+    display: flex !important;
+    visibility: visible !important;
+}
 
 .kpi-card { background: white; border-radius: 16px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f2f5; }
 .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa3c0; margin-bottom: 6px; }
@@ -109,27 +121,120 @@ def load_index():
     c, _ = gh_get("history/index.json")
     return json.loads(c) if c else []
 
-def save_snapshot(snap):
-    date_str  = snap["date"]
-    path      = f"history/{date_str}.json"
-    c_str     = json.dumps(snap, ensure_ascii=False, indent=2)
-    _, old_sha = gh_get(path)
-    ok1 = gh_put(path, c_str, f"snapshot: {date_str}", old_sha)
-
-    index = load_index()
-    load_index.clear()
-    index = [s for s in index if s["date"] != date_str]
-    index.append({"date": date_str, "total": snap["total"], "delivered": snap["delivered"],
-                  "on_time": snap["on_time"], "sla_pct": snap["sla_pct"], "missing_sla": snap["missing_sla"]})
-    index.sort(key=lambda x: x["date"])
-    _, idx_sha = gh_get("history/index.json")
-    ok2 = gh_put("history/index.json", json.dumps(index, ensure_ascii=False, indent=2),
-                 f"index: {date_str}", idx_sha)
-    return ok1 and ok2
-
 def load_detail(date_str):
     c, _ = gh_get(f"history/{date_str}.json")
     return json.loads(c) if c else None
+
+# ---------- MASTER TABLE ----------
+MASTER_TABLE_PATH = "history/master_table.csv"
+
+@st.cache_data(ttl=60)
+def load_master_table():
+    """Load the persistent master table from GitHub."""
+    c, sha = gh_get(MASTER_TABLE_PATH)
+    if c:
+        from io import StringIO
+        return pd.read_csv(StringIO(c), dtype=str), sha
+    return pd.DataFrame(), None
+
+def update_master_table(df_new):
+    """
+    Merge df_new into master_table with the logic:
+    - Αριθμός ΔΕΝ υπάρχει       → νέα εγγραφή
+    - Υπάρχει + έχει παράδοση  → skip
+    - Υπάρχει + δεν έχει παράδ. + τώρα έχει → overwrite
+    - Υπάρχει + δεν έχει παράδ. + ακόμα δεν έχει → skip
+    Returns (updated_df, n_new, n_updated, changed)
+    """
+    existing, sha = load_master_table()
+
+    # Normalize incoming data to str for consistent comparison
+    df_new = df_new.copy()
+    df_new["Αριθμός"] = df_new["Αριθμός"].astype(str)
+    df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
+
+    if existing.empty:
+        # First time — save everything
+        result = df_new[["Αριθμός","Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης_str",
+                          "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης"]].copy()
+        result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ"]
+        return result, len(result), 0, True, sha
+
+    existing["Αριθμός"] = existing["Αριθμός"].astype(str)
+    existing_idx = existing.set_index("Αριθμός")
+
+    n_new = 0
+    n_updated = 0
+    rows_to_add = []
+
+    for _, row in df_new.iterrows():
+        ar = str(row["Αριθμός"])
+        new_del = row["Ημ/νία Παράδοσης_str"].strip()
+
+        if ar not in existing_idx.index:
+            # Νέα εγγραφή
+            rows_to_add.append({
+                "Αριθμός": ar,
+                "Ημ_Δημιουργίας": str(row["Ημ/νία Δημιουργίας"]),
+                "Ημ_Παράδοσης": new_del,
+                "Key": str(row["Κλειδί Πελάτη 3"]),
+                "Διεύθυνση": str(row["Δ/νση Παράδοσης"]),
+                "ΤΚ": str(row["Τ.Κ Παράδοσης"]),
+            })
+            n_new += 1
+        else:
+            existing_del = str(existing_idx.loc[ar, "Ημ_Παράδοσης"]).strip()
+            if existing_del and existing_del not in ("nan","","NaT"):
+                # Ήδη delivered → skip
+                pass
+            elif new_del and new_del not in ("nan","","NaT"):
+                # Pending → τώρα delivered → overwrite
+                existing.loc[existing["Αριθμός"]==ar, "Ημ_Παράδοσης"] = new_del
+                n_updated += 1
+
+    if rows_to_add:
+        existing = pd.concat([existing, pd.DataFrame(rows_to_add)], ignore_index=True)
+
+    changed = (n_new > 0) or (n_updated > 0)
+    return existing, n_new, n_updated, changed, sha
+
+def save_master_table(df_master, sha):
+    """Save master table CSV to GitHub."""
+    load_master_table.clear()
+    csv_str = df_master.to_csv(index=False)
+    _, current_sha = gh_get(MASTER_TABLE_PATH)
+    effective_sha = current_sha or sha
+    return gh_put(MASTER_TABLE_PATH, csv_str, "master_table update", effective_sha)
+
+def save_snapshot(snap, force_new_id=False):
+    """Save snapshot — uses data_hash as unique ID so each data change = new snapshot."""
+    snap_id   = snap["snapshot_id"]  # hash-based unique ID
+    path      = f"history/{snap_id}.json"
+    c_str     = json.dumps(snap, ensure_ascii=False, indent=2)
+    _, old_sha = gh_get(path)
+    ok1 = gh_put(path, c_str, f"snapshot: {snap['date']} ({snap_id})", old_sha)
+
+    index = load_index()
+    load_index.clear()
+    # Never remove — every upload with changes gets its own entry
+    index.append({
+        "snapshot_id": snap_id,
+        "date":        snap["date"],
+        "uploaded_at": snap["created_at"],
+        "total":       snap["total"],
+        "delivered":   snap["delivered"],
+        "on_time":     snap["on_time"],
+        "sla_pct":     snap["sla_pct"],
+        "missing_sla": snap["missing_sla"],
+        "n_new":       snap.get("n_new", 0),
+        "n_updated":   snap.get("n_updated", 0),
+    })
+    index.sort(key=lambda x: x["uploaded_at"])
+    _, idx_sha = gh_get("history/index.json")
+    ok2 = gh_put("history/index.json",
+                 json.dumps(index, ensure_ascii=False, indent=2),
+                 f"index: {snap['date']}", idx_sha)
+    return ok1 and ok2
 
 # ---------- DATA LOADING ----------
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
@@ -223,7 +328,8 @@ def metrics(df):
         "missing_sla": int(df["sla_days"].isna().sum()),
     }
 
-def build_snapshot(df, m, del_df):
+def build_snapshot(df, m, del_df, n_new=0, n_updated=0):
+    data_hash = hashlib.md5(df["Αριθμός"].astype(str).sort_values().str.cat().encode()).hexdigest()[:12]
     snap_date = df["Ημ/νία Δημιουργίας"].max().strftime("%Y-%m-%d")
     sla_bd = {}
     for h,d,lbl in [(24,1,"24h"),(48,2,"48h"),(96,4,"96h")]:
@@ -240,9 +346,11 @@ def build_snapshot(df, m, del_df):
             ot_r = int(grp["on_time"].sum())
             regional[str(reg)] = {"total":len(grp),"on_time":ot_r,"pct":round(ot_r/len(grp)*100,2)}
     return {
-        "date": snap_date,
-        "data_hash": hashlib.md5(df["Αριθμός"].astype(str).sort_values().str.cat().encode()).hexdigest()[:8],
+        "snapshot_id": data_hash,
+        "date":        snap_date,
         **m,
+        "n_new":       n_new,
+        "n_updated":   n_updated,
         "sla_breakdown": sla_bd,
         "delay_counts": {"1d":int((del_df["delay_days"]==1).sum()),
                          "2d":int((del_df["delay_days"]==2).sum()),
@@ -432,22 +540,32 @@ if "Επισκόπηση" in page:
                 {bar("24h (1 εργάσιμη)",p24)}{bar("48h (2 εργάσιμες)",p48)}{bar("96h (4 εργάσιμες)",p96)}
             </div>""", unsafe_allow_html=True)
 
-    # Auto-snapshot
+    # ---------- MASTER TABLE + SNAPSHOT ----------
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     if GH_TOKEN and GH_REPO:
-        snap_date = df_full["Ημ/νία Δημιουργίας"].max().strftime("%Y-%m-%d")
-        index     = load_index()
-        if snap_date not in [s["date"] for s in index]:
-            with st.spinner("💾 Αποθήκευση snapshot..."):
+        with st.spinner("🔄 Έλεγχος αλλαγών..."):
+            # Step 1: update master table
+            df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_full)
+
+            if changed:
+                # Save updated master table
+                ok_mt = save_master_table(df_processed, mt_sha)
+                # Step 2: compute current hash AFTER update
                 d_all, m_all = metrics(df_full)
-                snap = build_snapshot(df_full, m_all, d_all)
-                ok = save_snapshot(snap)
-            if ok:
-                st.markdown(f'<div class="snap-ok">✅ Νέο snapshot αποθηκεύτηκε: {snap_date}</div>', unsafe_allow_html=True)
+                snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_updated)
+                # Check if this exact hash already in index (idempotent)
+                index = load_index()
+                existing_ids = [s.get("snapshot_id","") for s in index]
+                if snap["snapshot_id"] not in existing_ids:
+                    ok_snap = save_snapshot(snap)
+                    msg = f"✅ Νέο snapshot: <b>{n_new}</b> νέες αποστολές, <b>{n_updated}</b> pending → delivered"
+                    st.markdown(f'<div class="snap-ok">{msg}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="snap-ok">✅ Τα δεδομένα είναι ήδη ενημερωμένα</div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="snap-warn">⚠️ Αποτυχία snapshot — έλεγξε το GitHub token</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="snap-ok">✅ Snapshot {snap_date} υπάρχει ήδη</div>', unsafe_allow_html=True)
+                st.markdown('<div class="snap-ok">✅ Καμία αλλαγή — δεν χρειάζεται νέο snapshot</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="snap-warn">⚠️ GitHub token δεν έχει οριστεί — ιστορικό απενεργοποιημένο</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════
 # PAGE: ΙΣΤΟΡΙΚΟ
@@ -487,15 +605,19 @@ elif "Ιστορικό" in page:
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # Comparison
-    dates = [s["date"] for s in reversed(snapshots)]
-    if len(dates) >= 2:
-        st.markdown("#### 🔍 Σύγκριση δύο ημερομηνιών")
+    if len(snapshots) >= 2:
+        st.markdown("#### 🔍 Σύγκριση δύο uploads")
+        def snap_label(s):
+            upl = s.get("uploaded_at","")[:16].replace("T"," ")
+            return f"{s['date']}  ({upl})"
+        snap_labels = [snap_label(s) for s in reversed(snapshots)]
+        snap_ids    = [s.get("snapshot_id", s["date"]) for s in reversed(snapshots)]
         cc1,cc2 = st.columns(2)
-        with cc1: sel1 = st.selectbox("Ημερομηνία Α", dates, key="s1")
-        with cc2: sel2 = st.selectbox("Ημερομηνία Β", dates, index=1, key="s2")
+        with cc1: i1 = st.selectbox("Upload Α", range(len(snap_labels)), format_func=lambda i: snap_labels[i], key="s1")
+        with cc2: i2 = st.selectbox("Upload Β", range(len(snap_labels)), format_func=lambda i: snap_labels[i], index=min(1,len(snap_labels)-1), key="s2")
 
-        if sel1 != sel2:
-            d1 = load_detail(sel1); d2 = load_detail(sel2)
+        if i1 != i2:
+            d1 = load_detail(snap_ids[i1]); d2 = load_detail(snap_ids[i2])
             if d1 and d2:
                 r1,r2,r3,r4 = st.columns(4)
                 def delta(v1, v2, hib=True):
@@ -515,16 +637,26 @@ elif "Ιστορικό" in page:
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # All snapshots
-    st.markdown("#### 📋 Όλα τα Snapshots")
+    st.markdown("#### 📋 Όλα τα Uploads")
     for snap in reversed(snapshots):
-        pct = snap["sla_pct"]
-        bc  = "badge-green" if pct>=90 else "badge-orange" if pct>=75 else "badge-red"
-        bl  = "✅ Καλό" if pct>=90 else "⚠️ Μέτριο" if pct>=75 else "❌ Κακό"
-        sc  = "#16a34a" if pct>=90 else "#92400e" if pct>=75 else "#b91c1c"
+        pct    = snap["sla_pct"]
+        bc     = "badge-green" if pct>=90 else "badge-orange" if pct>=75 else "badge-red"
+        bl     = "✅ Καλό" if pct>=90 else "⚠️ Μέτριο" if pct>=75 else "❌ Κακό"
+        sc     = "#16a34a" if pct>=90 else "#92400e" if pct>=75 else "#b91c1c"
+        n_new  = snap.get("n_new", "—")
+        n_upd  = snap.get("n_updated", "—")
+        upl_at = snap.get("uploaded_at","")[:16].replace("T"," ")
         st.markdown(f"""<div class="hist-card" style="display:flex;justify-content:space-between;align-items:center;">
             <div>
-                <div style="font-size:13px;font-weight:700;color:#1a2235;">{snap['date']}</div>
-                <div style="font-size:11px;color:#8fa3c0;">{snap['total']:,} αποστολές &nbsp;·&nbsp; {snap['delivered']:,} παραδόθηκαν &nbsp;·&nbsp; Missing SLA: {snap['missing_sla']:,}</div>
+                <div style="font-size:13px;font-weight:700;color:#1a2235;">
+                    {snap['date']}
+                    <span style="font-size:11px;color:#8fa3c0;font-weight:400;margin-left:8px;">upload: {upl_at}</span>
+                </div>
+                <div style="font-size:11px;color:#8fa3c0;margin-top:3px;">
+                    {snap['total']:,} αποστολές &nbsp;·&nbsp; {snap['delivered']:,} παραδόθηκαν &nbsp;·&nbsp;
+                    <span style="color:#16a34a;font-weight:600;">+{n_new} νέες</span> &nbsp;·&nbsp;
+                    <span style="color:#7c3aed;font-weight:600;">{n_upd} ενημερώσεις pending→delivered</span>
+                </div>
             </div>
             <div style="text-align:right;">
                 <div style="font-size:22px;font-weight:800;color:{sc};">{pct:.2f}%</div>
@@ -614,10 +746,12 @@ elif "Ρυθμίσεις" in page:
 
     if st.button("🔄 Αναγκαστικό snapshot τώρα"):
         with st.spinner("Αποθήκευση..."):
+            df_proc, n_new, n_upd, changed, mt_sha = update_master_table(df_full)
+            save_master_table(df_proc, mt_sha)
             d_all, m_all = metrics(df_full)
-            snap = build_snapshot(df_full, m_all, d_all)
+            snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_upd)
             ok = save_snapshot(snap)
-        st.success(f"✅ Snapshot {snap['date']} αποθηκεύτηκε!") if ok else st.error("❌ Αποτυχία")
+        st.success(f"✅ Snapshot αποθηκεύτηκε! ({n_new} νέες, {n_upd} ενημερώσεις)") if ok else st.error("❌ Αποτυχία")
 
     if st.button("🗑️ Εκκαθάριση cache δεδομένων"):
         load_and_process.clear()
