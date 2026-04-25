@@ -405,6 +405,7 @@ with st.sidebar:
     page = st.radio("Πλοήγηση", [
         "🏠  Επισκόπηση",
         "🗺️  Ανάλυση Νομού",
+        "🏪  Ανάλυση Καταστήματος",
     ], label_visibility="collapsed")
 
     st.markdown(f"""
@@ -482,31 +483,31 @@ if "Επισκόπηση" in page:
             </svg>
         </div>"""
 
-    def donut_svg(pct, c_in, c_out, size=130):
-        r = 46; cx = cy = 60; stroke = 14
+    def donut_svg(pct, c_in, c_out, size=200):
+        r = 72; cx = cy = 90; stroke = 18
         circ = 2 * 3.14159 * r
         filled = circ * pct / 100
         gap = circ - filled
-        return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+        return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
                 stroke-dasharray="{filled:.2f} {gap:.2f}" stroke-linecap="round"
                 transform="rotate(-90 {cx} {cy})"/>
-            <text x="{cx}" y="{cy-6}" text-anchor="middle" dominant-baseline="central"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
-            <text x="{cx}" y="{cy+12}" text-anchor="middle"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+            <text x="{cx}" y="{cy-8}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+            <text x="{cx}" y="{cy+18}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">εντός SLA</text>
         </svg>"""
 
-    def seg_svg(d24, d48, d96, size=130):
+    def seg_svg(d24, d48, d96, size=200):
         total = d24 + d48 + d96
-        r = 46; cx = cy = 60; sw = 14
+        r = 72; cx = cy = 90; sw = 18
         circ = 2 * 3.14159265 * r
         if total == 0:
-            return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+            return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
                 <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                    font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">0</text>
+                    font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">0</text>
             </svg>"""
         gap = circ * 0.016
         def seg(count, color, offset):
@@ -516,27 +517,27 @@ if "Επισκόπηση" in page:
                 stroke-dasharray="{length:.3f} {circ-length:.3f}" stroke-linecap="butt"
                 transform="rotate({offset-90} {cx} {cy})"/>"""
         a24=(d24/total)*360; a48=(d48/total)*360
-        return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+        return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
             {seg(d24,"#22c55e",0)}{seg(d48,"#f97316",a24)}{seg(d96,"#ef4444",a24+a48)}
-            <text x="{cx}" y="{cy-6}" text-anchor="middle" dominant-baseline="central"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">{total:,}</text>
-            <text x="{cx}" y="{cy+12}" text-anchor="middle"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">αποστολές</text>
+            <text x="{cx}" y="{cy-8}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">{total:,}</text>
+            <text x="{cx}" y="{cy+18}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">αποστολές</text>
         </svg>"""
 
     def card_sla(g, lbl):
         if not len(g):
-            return f'<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:120px;"><div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:11px;margin-top:8px;">Δεν υπάρχουν</div></div>'
+            return f'<div style="background:white;border-radius:14px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:200px;"><div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:12px;margin-top:8px;">Δεν υπάρχουν</div></div>'
         ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
-        return f"""<div style="background:white;border-radius:14px;padding:14px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:16px;">
+        return f"""<div style="background:white;border-radius:14px;padding:16px 20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:20px;">
             {donut_svg(pct,"#22c55e","#fee2e2")}
             <div style="flex:1;min-width:0;">
-                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">{lbl}</div>
-                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>Εντός &nbsp;<b style="color:#1a2235">{ot:,}</b> <span style="color:#8fa3c0">({pct:.2f}%)</span></div>
-                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:10px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>Εκτός &nbsp;<b style="color:#1a2235">{lat:,}</b> <span style="color:#8fa3c0">({100-pct:.2f}%)</span></div>
-                <div style="font-size:10px;color:#8fa3c0;font-weight:500;">Σύνολο παραδοθέντων</div>
-                <div style="font-size:14px;font-weight:700;color:#1a2235;">{len(g):,}</div>
+                <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">{lbl}</div>
+                <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:6px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:7px;"></span>Εντός &nbsp;<b style="color:#1a2235;font-size:15px;">{ot:,}</b> <span style="color:#8fa3c0">({pct:.2f}%)</span></div>
+                <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:7px;"></span>Εκτός &nbsp;<b style="color:#1a2235;font-size:15px;">{lat:,}</b> <span style="color:#8fa3c0">({100-pct:.2f}%)</span></div>
+                <div style="font-size:11px;color:#8fa3c0;font-weight:500;">Σύνολο παραδοθέντων</div>
+                <div style="font-size:18px;font-weight:800;color:#1a2235;">{len(g):,}</div>
             </div>
         </div>"""
 
@@ -545,15 +546,15 @@ if "Επισκόπηση" in page:
         d24 = len(dd[dd["sla_days"]==1]); d48 = len(dd[dd["sla_days"]==2]); d96 = len(dd[dd["sla_days"]==4])
         p24 = round(d24/n*100,1) if n else 0; p48 = round(d48/n*100,1) if n else 0; p96 = round(d96/n*100,1) if n else 0
         pct_tot = round(n/td*100,1) if td else 0
-        return f"""<div style="background:white;border-radius:14px;padding:14px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:16px;">
+        return f"""<div style="background:white;border-radius:14px;padding:16px 20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:20px;">
             {seg_svg(d24,d48,d96)}
             <div style="flex:1;min-width:0;">
-                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">{lbl} καθυστέρηση</div>
-                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>24h &nbsp;<b style="color:#1a2235">{d24:,}</b> <span style="color:#8fa3c0">({p24}%)</span></div>
-                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;margin-right:6px;"></span>48h &nbsp;<b style="color:#1a2235">{d48:,}</b> <span style="color:#8fa3c0">({p48}%)</span></div>
-                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:10px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>96h &nbsp;<b style="color:#1a2235">{d96:,}</b> <span style="color:#8fa3c0">({p96}%)</span></div>
-                <div style="font-size:10px;color:#8fa3c0;font-weight:500;">% επί παραδοθέντων</div>
-                <div style="font-size:14px;font-weight:700;color:#1a2235;">{pct_tot}%</div>
+                <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">{lbl} καθυστέρηση</div>
+                <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:6px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:7px;"></span>24h &nbsp;<b style="color:#1a2235;font-size:15px;">{d24:,}</b> <span style="color:#8fa3c0">({p24}%)</span></div>
+                <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:6px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f97316;margin-right:7px;"></span>48h &nbsp;<b style="color:#1a2235;font-size:15px;">{d48:,}</b> <span style="color:#8fa3c0">({p48}%)</span></div>
+                <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:7px;"></span>96h &nbsp;<b style="color:#1a2235;font-size:15px;">{d96:,}</b> <span style="color:#8fa3c0">({p96}%)</span></div>
+                <div style="font-size:11px;color:#8fa3c0;font-weight:500;">% επί παραδοθέντων</div>
+                <div style="font-size:18px;font-weight:800;color:#1a2235;">{pct_tot}%</div>
             </div>
         </div>"""
 
@@ -895,3 +896,135 @@ elif "Νομού" in page:
     tbl["Αποστολές Α"] = tbl["Αποστολές Α"].astype(int)
     tbl["Αποστολές Β"] = tbl["Αποστολές Β"].astype(int)
     st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════
+# PAGE: ΑΝΑΛΥΣΗ ΚΑΤΑΣΤΗΜΑΤΟΣ
+# ══════════════════════════════════════════════
+elif "Καταστήματος" in page:
+    st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΚΑΤΑΣΤΗΜΑ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Βάσει φίλτρου ημερομηνιών · φίλτρο καταστήματος αγνοείται εδώ</div>', unsafe_allow_html=True)
+
+    # Use date-filtered but NOT shop-filtered data
+    df_shops = df_full[
+        (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
+        (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
+    ].copy()
+
+    del_shops, _ = metrics(df_shops)
+
+    if not len(del_shops) or "Κατάστημα" not in del_shops.columns:
+        st.info("Δεν υπάρχουν δεδομένα καταστήματος.")
+        st.stop()
+
+    # ── KPIs per shop ──
+    shop_grp = (del_shops.groupby("Κατάστημα")
+                .agg(total=("on_time","count"), on_time=("on_time","sum"))
+                .reset_index())
+    shop_grp["sla_pct"]   = (shop_grp["on_time"] / shop_grp["total"] * 100).round(2)
+    shop_grp["late"]      = shop_grp["total"] - shop_grp["on_time"]
+    shop_grp = shop_grp.sort_values("sla_pct", ascending=False)
+
+    # ── Summary bar chart ──
+    st.markdown("#### 📊 SLA% ανά Κατάστημα")
+    colors_bar = shop_grp["sla_pct"].apply(
+        lambda x: "#22c55e" if x >= 90 else ("#f97316" if x >= 75 else "#ef4444")
+    ).tolist()
+
+    fig_shop = go.Figure(go.Bar(
+        x=shop_grp["Κατάστημα"], y=shop_grp["sla_pct"],
+        marker_color=colors_bar,
+        text=shop_grp["sla_pct"].apply(lambda x: f"{x:.1f}%"),
+        textposition="outside",
+        hovertemplate="<b>%{x}</b><br>SLA: %{y:.2f}%<extra></extra>",
+    ))
+    fig_shop.update_layout(
+        height=400,
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(t=30, b=80, l=40, r=20),
+        font=dict(family="Plus Jakarta Sans"),
+        xaxis=dict(tickangle=45, gridcolor="#f0f2f5"),
+        yaxis=dict(range=[0,110], ticksuffix="%", gridcolor="#f0f2f5"),
+        showlegend=False,
+    )
+    fig_shop.add_hline(y=90, line_dash="dot", line_color="#22c55e", opacity=0.5,
+                       annotation_text="90% target", annotation_position="right")
+    st.plotly_chart(fig_shop, use_container_width=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── SLA breakdown per shop (24/48/96) ──
+    st.markdown("#### 📦 Ανάλυση ανά SLA type")
+    sla_breakdown = []
+    for shop, grp in del_shops.groupby("Κατάστημα"):
+        for sla_d, lbl in [(1,"24h"),(2,"48h"),(4,"96h")]:
+            g = grp[grp["sla_days"]==sla_d]
+            if not len(g): continue
+            ot = int(g["on_time"].sum())
+            sla_breakdown.append({
+                "Κατάστημα": shop, "SLA": lbl,
+                "Σύνολο": len(g), "Εντός": ot,
+                "SLA%": round(ot/len(g)*100,2)
+            })
+    if sla_breakdown:
+        bd_df = pd.DataFrame(sla_breakdown)
+        fig_bd = px.bar(bd_df, x="Κατάστημα", y="SLA%", color="SLA",
+                        barmode="group",
+                        color_discrete_map={"24h":"#22c55e","48h":"#f97316","96h":"#ef4444"},
+                        hover_data=["Σύνολο","Εντός"])
+        fig_bd.update_layout(
+            height=380, paper_bgcolor="white", plot_bgcolor="white",
+            margin=dict(t=10,b=80,l=40,r=10),
+            font=dict(family="Plus Jakarta Sans"),
+            xaxis=dict(tickangle=45),
+            yaxis=dict(range=[0,110], ticksuffix="%", gridcolor="#f0f2f5"),
+            legend=dict(orientation="h", y=1.05),
+        )
+        fig_bd.add_hline(y=90, line_dash="dot", line_color="#94a3b8", opacity=0.5)
+        st.plotly_chart(fig_bd, use_container_width=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Delay analysis per shop ──
+    st.markdown("#### ⏱️ Καθυστερήσεις ανά Κατάστημα")
+    delay_grp = []
+    for shop, grp in del_shops.groupby("Κατάστημα"):
+        total_s = len(grp)
+        delay_grp.append({
+            "Κατάστημα": shop,
+            "Σύνολο": total_s,
+            "1 ημέρα": int((grp["delay_days"]==1).sum()),
+            "2 ημέρες": int((grp["delay_days"]==2).sum()),
+            "3+ ημέρες": int((grp["delay_days"]>=3).sum()),
+            "Εντός SLA": int(grp["on_time"].sum()),
+            "SLA%": round(grp["on_time"].sum()/total_s*100,2),
+        })
+    delay_df = pd.DataFrame(delay_grp).sort_values("SLA%", ascending=False)
+
+    fig_del = go.Figure()
+    for col, color, name in [("1 ημέρα","#f97316","1 ημέρα"),
+                              ("2 ημέρες","#f59e0b","2 ημέρες"),
+                              ("3+ ημέρες","#ef4444","3+ ημέρες")]:
+        fig_del.add_trace(go.Bar(
+            x=delay_df["Κατάστημα"], y=delay_df[col],
+            name=name, marker_color=color,
+            hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y}}<extra></extra>",
+        ))
+    fig_del.update_layout(
+        barmode="stack", height=350,
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(t=10,b=80,l=40,r=10),
+        font=dict(family="Plus Jakarta Sans"),
+        xaxis=dict(tickangle=45),
+        yaxis=dict(gridcolor="#f0f2f5"),
+        legend=dict(orientation="h", y=1.05),
+    )
+    st.plotly_chart(fig_del, use_container_width=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Full table ──
+    st.markdown("#### 📋 Πίνακας")
+    st.dataframe(
+        delay_df.style.background_gradient(subset=["SLA%"], cmap="RdYlGn", vmin=70, vmax=100),
+        use_container_width=True, hide_index=True
+    )
