@@ -191,7 +191,7 @@ def update_master_table(df_new):
 
     for _, row in df_new.iterrows():
         ar = str(row["Αριθμός"])
-        new_del = row["Ημ/νία Παράδοσης_str"].strip()
+        new_del = str(row["Ημ/νία Παράδοσης_str"]).strip()
 
         if ar not in existing_idx.index:
             rows_to_add.append({
@@ -561,7 +561,7 @@ if "Επισκόπηση" in page:
     td = len(delivered)
 
     # Row 1: SLA by type
-    st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΧΡΟΝΟ ΠΑΡΑΔΟΣΗΣ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΖΩΝΗ ΠΑΡΑΔΟΣΗΣ</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
     r1c1, r1c2, r1c3 = st.columns(3)
     for col, sd, lbl in [(r1c1,1,"24h (1 εργάσιμη)"),(r1c2,2,"48h (2 εργάσιμες)"),(r1c3,4,"96h (4 εργάσιμες)")]:
@@ -791,7 +791,7 @@ elif "Νομού" in page:
     # ══ SCATTER ══
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown("#### 🔵 Scatter — Περίοδος Α vs Β")
-    st.markdown('<div class="section-sub">Hover για λεπτομέρειες · Πάνω από τη διαγώνιο = βελτίωση στην Β · Κάτω = χειροτέρεμα</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Hover για λεπτομέρειες · Πάνω από τη διαγώνιο = βελτίωση στην Β · Κάτω = επιδείνωση</div>', unsafe_allow_html=True)
 
     fig_sc = go.Figure()
     fig_sc.add_shape(type="line", x0=50, y0=50, x1=100, y1=100,
@@ -830,7 +830,7 @@ elif "Νομού" in page:
                    gridcolor="#f0f2f5", showgrid=True),
         showlegend=False,
     )
-    fig_sc.add_annotation(x=100, y=54, text="📉 Χειροτέρεμα", showarrow=False,
+    fig_sc.add_annotation(x=100, y=54, text="📉 Επιδείνωση", showarrow=False,
                           font=dict(size=10, color="#ef4444"), xanchor="right")
     fig_sc.add_annotation(x=52, y=100, text="📈 Βελτίωση", showarrow=False,
                           font=dict(size=10, color="#22c55e"), xanchor="left")
@@ -902,129 +902,116 @@ elif "Νομού" in page:
 # ══════════════════════════════════════════════
 elif "Καταστήματος" in page:
     st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΚΑΤΑΣΤΗΜΑ</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Βάσει φίλτρου ημερομηνιών · φίλτρο καταστήματος αγνοείται εδώ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Βάσει φίλτρου ημερομηνιών</div>', unsafe_allow_html=True)
 
-    # Use date-filtered but NOT shop-filtered data
-    df_shops = df_full[
-        (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
-        (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
-    ].copy()
+    # Period selectors (same pattern as Νομού)
+    all_min = df_full["Ημ/νία Δημιουργίας"].min().date()
+    all_max = df_full["Ημ/νία Δημιουργίας"].max().date()
 
-    del_shops, _ = metrics(df_shops)
+    sp1, sp2, sp3, sp4, _ = st.columns([2,2,2,2,1])
+    with sp1: s_p1_from = st.date_input("Περίοδος Α — Από", value=all_min, min_value=all_min, max_value=all_max, key="sp1f")
+    with sp2: s_p1_to   = st.date_input("Περίοδος Α — Έως", value=all_max, min_value=all_min, max_value=all_max, key="sp1t")
+    with sp3: s_p2_from = st.date_input("Περίοδος Β — Από", value=all_min, min_value=all_min, max_value=all_max, key="sp2f")
+    with sp4: s_p2_to   = st.date_input("Περίοδος Β — Έως", value=all_max, min_value=all_min, max_value=all_max, key="sp2t")
 
-    if not len(del_shops) or "Κατάστημα" not in del_shops.columns:
-        st.info("Δεν υπάρχουν δεδομένα καταστήματος.")
+    def shop_stats(d_from, d_to):
+        mask = (df_full["Ημ/νία Δημιουργίας"].dt.date >= d_from) & (df_full["Ημ/νία Δημιουργίας"].dt.date <= d_to)
+        sub  = df_full[mask]
+        d, _ = metrics(sub)
+        if not len(d) or "Κατάστημα" not in d.columns: return pd.DataFrame()
+        r = d.groupby("Κατάστημα").agg(total=("on_time","count"), on_time=("on_time","sum")).reset_index()
+        r["sla_pct"] = (r["on_time"] / r["total"] * 100).round(2)
+        r["late"]    = r["total"] - r["on_time"]
+        return r
+
+    grp_A = shop_stats(s_p1_from, s_p1_to)
+    grp_B = shop_stats(s_p2_from, s_p2_to)
+
+    if grp_A.empty:
+        st.info("Δεν υπάρχουν δεδομένα καταστήματος για την περίοδο Α.")
         st.stop()
 
-    # ── KPIs per shop ──
-    shop_grp = (del_shops.groupby("Κατάστημα")
-                .agg(total=("on_time","count"), on_time=("on_time","sum"))
-                .reset_index())
-    shop_grp["sla_pct"]   = (shop_grp["on_time"] / shop_grp["total"] * 100).round(2)
-    shop_grp["late"]      = shop_grp["total"] - shop_grp["on_time"]
-    shop_grp = shop_grp.sort_values("sla_pct", ascending=False)
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # ── Summary bar chart ──
-    st.markdown("#### 📊 SLA% ανά Κατάστημα")
-    colors_bar = shop_grp["sla_pct"].apply(
-        lambda x: "#22c55e" if x >= 90 else ("#f97316" if x >= 75 else "#ef4444")
-    ).tolist()
+    # ── TOP 10 / BOTTOM 10 cards ──
+    def shop_cards(grp, title, ascending, color_top, color_bot):
+        top = grp.sort_values("sla_pct", ascending=ascending).head(10)
+        cols = st.columns(5)
+        for i, (_, row) in enumerate(top.iterrows()):
+            pct = row["sla_pct"]
+            c = color_top if not ascending else color_bot
+            badge_col = "#22c55e" if pct>=90 else "#f97316" if pct>=75 else "#ef4444"
+            with cols[i % 5]:
+                st.markdown(f"""
+                <div style="background:white;border-radius:12px;padding:14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);
+                    border:1px solid #f0f2f5;margin-bottom:10px;border-top:3px solid {badge_col};">
+                    <div style="font-size:10px;color:#8fa3c0;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+                        title="{row['Κατάστημα']}">{row['Κατάστημα']}</div>
+                    <div style="font-size:22px;font-weight:800;color:{badge_col};">{pct:.1f}%</div>
+                    <div style="font-size:11px;color:#8fa3c0;">{row['total']:,} αποστολές</div>
+                </div>""", unsafe_allow_html=True)
 
-    fig_shop = go.Figure(go.Bar(
-        x=shop_grp["Κατάστημα"], y=shop_grp["sla_pct"],
-        marker_color=colors_bar,
-        text=shop_grp["sla_pct"].apply(lambda x: f"{x:.1f}%"),
-        textposition="outside",
-        hovertemplate="<b>%{x}</b><br>SLA: %{y:.2f}%<extra></extra>",
-    ))
-    fig_shop.update_layout(
-        height=400,
-        paper_bgcolor="white", plot_bgcolor="white",
-        margin=dict(t=30, b=80, l=40, r=20),
-        font=dict(family="Plus Jakarta Sans"),
-        xaxis=dict(tickangle=45, gridcolor="#f0f2f5"),
-        yaxis=dict(range=[0,110], ticksuffix="%", gridcolor="#f0f2f5"),
-        showlegend=False,
-    )
-    fig_shop.add_hline(y=90, line_dash="dot", line_color="#22c55e", opacity=0.5,
-                       annotation_text="90% target", annotation_position="right")
-    st.plotly_chart(fig_shop, use_container_width=True)
+    st.markdown("#### 🏆 Top 10 — Καλύτερη επίδοση")
+    shop_cards(grp_A, "top10", False, "#22c55e", "#ef4444")
+
+    st.markdown("#### ⚠️ Bottom 10 — Χαμηλότερη επίδοση")
+    shop_cards(grp_A, "bot10", True, "#22c55e", "#ef4444")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # ── SLA breakdown per shop (24/48/96) ──
-    st.markdown("#### 📦 Ανάλυση ανά SLA type")
-    sla_breakdown = []
-    for shop, grp in del_shops.groupby("Κατάστημα"):
-        for sla_d, lbl in [(1,"24h"),(2,"48h"),(4,"96h")]:
-            g = grp[grp["sla_days"]==sla_d]
-            if not len(g): continue
-            ot = int(g["on_time"].sum())
-            sla_breakdown.append({
-                "Κατάστημα": shop, "SLA": lbl,
-                "Σύνολο": len(g), "Εντός": ot,
-                "SLA%": round(ot/len(g)*100,2)
-            })
-    if sla_breakdown:
-        bd_df = pd.DataFrame(sla_breakdown)
-        fig_bd = px.bar(bd_df, x="Κατάστημα", y="SLA%", color="SLA",
-                        barmode="group",
-                        color_discrete_map={"24h":"#22c55e","48h":"#f97316","96h":"#ef4444"},
-                        hover_data=["Σύνολο","Εντός"])
-        fig_bd.update_layout(
-            height=380, paper_bgcolor="white", plot_bgcolor="white",
-            margin=dict(t=10,b=80,l=40,r=10),
-            font=dict(family="Plus Jakarta Sans"),
-            xaxis=dict(tickangle=45),
-            yaxis=dict(range=[0,110], ticksuffix="%", gridcolor="#f0f2f5"),
-            legend=dict(orientation="h", y=1.05),
-        )
-        fig_bd.add_hline(y=90, line_dash="dot", line_color="#94a3b8", opacity=0.5)
-        st.plotly_chart(fig_bd, use_container_width=True)
+    # ── Dual-period bar chart (like Νομού) ──
+    st.markdown("#### 📊 Σύγκριση Περιόδων ανά Κατάστημα")
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    if not grp_B.empty:
+        merged_s = grp_A[["Κατάστημα","sla_pct","total"]].merge(
+            grp_B[["Κατάστημα","sla_pct","total"]], on="Κατάστημα", how="outer", suffixes=("_A","_B")
+        ).fillna(0)
+        merged_s["diff"]  = (merged_s["sla_pct_B"] - merged_s["sla_pct_A"]).round(2)
+        merged_s["arrow"] = merged_s["diff"].apply(lambda d: "▲" if d>0.5 else ("▼" if d<-0.5 else "→"))
+        merged_s["arrow_color"] = merged_s["diff"].apply(lambda d: "#16a34a" if d>0.5 else ("#ef4444" if d<-0.5 else "#8fa3c0"))
+        merged_s["diff_label"]  = merged_s.apply(lambda r: f"{r['arrow']} {abs(r['diff']):.1f}%", axis=1)
 
-    # ── Delay analysis per shop ──
-    st.markdown("#### ⏱️ Καθυστερήσεις ανά Κατάστημα")
-    delay_grp = []
-    for shop, grp in del_shops.groupby("Κατάστημα"):
-        total_s = len(grp)
-        delay_grp.append({
-            "Κατάστημα": shop,
-            "Σύνολο": total_s,
-            "1 ημέρα": int((grp["delay_days"]==1).sum()),
-            "2 ημέρες": int((grp["delay_days"]==2).sum()),
-            "3+ ημέρες": int((grp["delay_days"]>=3).sum()),
-            "Εντός SLA": int(grp["on_time"].sum()),
-            "SLA%": round(grp["on_time"].sum()/total_s*100,2),
-        })
-    delay_df = pd.DataFrame(delay_grp).sort_values("SLA%", ascending=False)
+        sc1, sc2 = st.columns([3,1])
+        with sc2:
+            s_sort = st.radio("Ταξινόμηση", ["▲","▼"], horizontal=True, key="s_sort", label_visibility="collapsed")
+        merged_s = merged_s.sort_values("diff", ascending=(s_sort=="▼"))
+        shops_s  = merged_s["Κατάστημα"].tolist()
 
-    fig_del = go.Figure()
-    for col, color, name in [("1 ημέρα","#f97316","1 ημέρα"),
-                              ("2 ημέρες","#f59e0b","2 ημέρες"),
-                              ("3+ ημέρες","#ef4444","3+ ημέρες")]:
-        fig_del.add_trace(go.Bar(
-            x=delay_df["Κατάστημα"], y=delay_df[col],
-            name=name, marker_color=color,
-            hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y}}<extra></extra>",
+        fig_s = go.Figure()
+        fig_s.add_trace(go.Bar(
+            y=shops_s, x=merged_s["sla_pct_A"], orientation="h", name="Περίοδος Α",
+            marker_color="#7c3aed", opacity=0.45, width=0.35, offset=-0.35,
+            hovertemplate="<b>%{y}</b><br>Α: %{x:.1f}%<extra></extra>",
         ))
-    fig_del.update_layout(
-        barmode="stack", height=350,
-        paper_bgcolor="white", plot_bgcolor="white",
-        margin=dict(t=10,b=80,l=40,r=10),
-        font=dict(family="Plus Jakarta Sans"),
-        xaxis=dict(tickangle=45),
-        yaxis=dict(gridcolor="#f0f2f5"),
-        legend=dict(orientation="h", y=1.05),
-    )
-    st.plotly_chart(fig_del, use_container_width=True)
+        fig_s.add_trace(go.Bar(
+            y=shops_s, x=merged_s["sla_pct_B"], orientation="h", name="Περίοδος Β",
+            marker_color="#0ea5e9", opacity=0.85, width=0.35, offset=0,
+            hovertemplate="<b>%{y}</b><br>Β: %{x:.1f}%<extra></extra>",
+        ))
+        for _, row in merged_s.iterrows():
+            fig_s.add_annotation(
+                y=row["Κατάστημα"], x=max(row["sla_pct_A"],row["sla_pct_B"])+1,
+                text=f"<b>{row['diff_label']}</b>", showarrow=False,
+                font=dict(size=9, color=row["arrow_color"], family="Plus Jakarta Sans"),
+                xanchor="left",
+            )
+        fig_s.update_layout(
+            height=max(500, len(shops_s)*28),
+            barmode="overlay", paper_bgcolor="white", plot_bgcolor="white",
+            margin=dict(t=10,b=20,l=20,r=80),
+            font=dict(family="Plus Jakarta Sans"),
+            xaxis=dict(range=[50,115], ticksuffix="%", gridcolor="#f0f2f5"),
+            yaxis=dict(autorange="reversed"),
+            legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
+            bargap=0.3,
+        )
+        st.plotly_chart(fig_s, use_container_width=True)
+    else:
+        st.info("Ορίστε Περίοδο Β για σύγκριση.")
 
+    # ── Table ──
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    tbl_s = grp_A.sort_values("sla_pct")[["Κατάστημα","sla_pct","total","on_time","late"]].copy()
+    tbl_s.columns = ["Κατάστημα","SLA%","Σύνολο","Εντός SLA","Εκτός SLA"]
+    st.dataframe(tbl_s, use_container_width=True, hide_index=True)
 
-    # ── Full table ──
-    st.markdown("#### 📋 Πίνακας")
-    st.dataframe(
-        delay_df.style.background_gradient(subset=["SLA%"], cmap="RdYlGn", vmin=70, vmax=100),
-        use_container_width=True, hide_index=True
-    )
