@@ -168,10 +168,18 @@ def update_master_table(df_new):
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
 
     if existing.empty:
-        # First time — save everything
         result = df_new[["Αριθμός","Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης_str",
-                          "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης"]].copy()
-        result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ"]
+                          "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης",
+                          "Κωδ. Καταστήματος Παράδοσης","Κατάστημα Παραλαβής"]].copy() \
+            if "Κωδ. Καταστήματος Παράδοσης" in df_new.columns else \
+            df_new[["Αριθμός","Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης_str",
+                    "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης"]].copy()
+        if "Κωδ. Καταστήματος Παράδοσης" in df_new.columns:
+            result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ","Κωδ_Καταστήματος","Κατάστημα"]
+        else:
+            result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ"]
+            result["Κωδ_Καταστήματος"] = ""
+            result["Κατάστημα"] = ""
         return result, len(result), 0, True, sha
 
     existing["Αριθμός"] = existing["Αριθμός"].astype(str)
@@ -186,14 +194,15 @@ def update_master_table(df_new):
         new_del = row["Ημ/νία Παράδοσης_str"].strip()
 
         if ar not in existing_idx.index:
-            # Νέα εγγραφή
             rows_to_add.append({
-                "Αριθμός": ar,
+                "Αριθμός":        ar,
                 "Ημ_Δημιουργίας": str(row["Ημ/νία Δημιουργίας"]),
-                "Ημ_Παράδοσης": new_del,
-                "Key": str(row["Κλειδί Πελάτη 3"]),
-                "Διεύθυνση": str(row["Δ/νση Παράδοσης"]),
-                "ΤΚ": str(row["Τ.Κ Παράδοσης"]),
+                "Ημ_Παράδοσης":   new_del,
+                "Key":            str(row["Κλειδί Πελάτη 3"]),
+                "Διεύθυνση":      str(row["Δ/νση Παράδοσης"]),
+                "ΤΚ":             str(row["Τ.Κ Παράδοσης"]),
+                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης", "")),
+                "Κατάστημα":      str(row.get("Κατάστημα Παραλαβής", "")),
             })
             n_new += 1
         else:
@@ -274,6 +283,15 @@ def load_and_process():
 
     df["KEY_CLEAN"]     = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
     df = df[df["KEY_CLEAN"].notna()].copy()
+
+    # Ενοποίηση καταστήματος
+    if "Κωδ. Καταστήματος Παράδοσης" in df.columns and "Κατάστημα Παραλαβής" in df.columns:
+        df["Κατάστημα"] = (
+            df["Κωδ. Καταστήματος Παράδοσης"].astype(str).str.strip() + " " +
+            df["Κατάστημα Παραλαβής"].astype(str).str.strip()
+        ).str.strip()
+    else:
+        df["Κατάστημα"] = "—"
     master["KEY_CLEAN"] = master["KEY1"].str.extract(r"(\d+)")
     df["ADDR_CLEAN"]    = df["Δ/νση Παράδοσης"].apply(clean_addr)
     master["ADDR_CLEAN"]= master["Full Address"].apply(clean_addr)
@@ -395,19 +413,25 @@ with st.sidebar:
         <div style='font-size:11px;color:#5a7090;'>{datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
     </div>""", unsafe_allow_html=True)
 
-# ---------- DATE FILTER ----------
+# ---------- FILTERS ----------
 min_d = df_full["Ημ/νία Δημιουργίας"].min().date()
 max_d = df_full["Ημ/νία Δημιουργίας"].max().date()
 
-fc1,fc2,fc3 = st.columns([2,2,4])
-with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας αποστολής")
-with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας αποστολής")
-with fc3: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:10px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; Τελευταία ενημέρωση: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;🔄</div>", unsafe_allow_html=True)
+# Shop list
+shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
+
+fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
+with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας")
+with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας")
+with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="shop")
+with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
 
 df = df_full[
     (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
     (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
 ].copy()
+if shop_filter != "Όλα":
+    df = df[df["Κατάστημα"] == shop_filter].copy()
 delivered, m = metrics(df)
 
 # ══════════════════════════════════════════════
@@ -458,99 +482,102 @@ if "Επισκόπηση" in page:
             </svg>
         </div>"""
 
-    col_l, col_r = st.columns(2)
+    def donut_svg(pct, c_in, c_out, size=130):
+        r = 46; cx = cy = 60; stroke = 14
+        circ = 2 * 3.14159 * r
+        filled = circ * pct / 100
+        gap = circ - filled
+        return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+            <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
+            <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
+                stroke-dasharray="{filled:.2f} {gap:.2f}" stroke-linecap="round"
+                transform="rotate(-90 {cx} {cy})"/>
+            <text x="{cx}" y="{cy-6}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+            <text x="{cx}" y="{cy+12}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+        </svg>"""
 
-    # Left: SLA by type
-    with col_l:
-        st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΧΡΟΝΟ ΠΑΡΑΔΟΣΗΣ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
-        c1,c2,c3 = st.columns(3)
-        for col, sd, lbl in [(c1,1,"24h (1 εργάσιμη)"),(c2,2,"48h (2 εργάσιμες)"),(c3,4,"96h (4 εργάσιμες)")]:
-            with col:
-                g = delivered[delivered["sla_days"]==sd]
-                if not len(g):
-                    st.markdown(f'<div style="padding:12px;background:white;border-radius:12px;border:1px solid #f0f2f5;"><div class="chart-label">{lbl}</div><div style="color:#ccc;font-size:11px;margin-top:8px;">Δεν υπάρχουν</div></div>', unsafe_allow_html=True)
-                    continue
-                ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
-                st.markdown(f"""
-                <div style="background:white;border-radius:14px;padding:14px 12px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;">
-                    {donut_html(pct, "#22c55e", "#fee2e2", lbl)}
-                    <div style="margin-top:10px;padding:0 4px;">
-                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>Εντός &nbsp;<b>{ot:,}</b> ({pct:.2f}%)</div>
-                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>Εκτός &nbsp;<b>{lat:,}</b> ({100-pct:.2f}%)</div>
-                        <div class="total-lbl" style="margin-top:8px;">Σύνολο παραδοθέντων</div>
-                        <div class="total-val">{len(g):,}</div>
-                    </div>
-                </div>""", unsafe_allow_html=True)
+    def seg_svg(d24, d48, d96, size=130):
+        total = d24 + d48 + d96
+        r = 46; cx = cy = 60; sw = 14
+        circ = 2 * 3.14159265 * r
+        if total == 0:
+            return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+                <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
+                <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
+                    font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">0</text>
+            </svg>"""
+        gap = circ * 0.016
+        def seg(count, color, offset):
+            length = (count/total)*circ - gap
+            if length <= 0: return ""
+            return f"""<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{sw}"
+                stroke-dasharray="{length:.3f} {circ-length:.3f}" stroke-linecap="butt"
+                transform="rotate({offset-90} {cx} {cy})"/>"""
+        a24=(d24/total)*360; a48=(d48/total)*360
+        return f"""<svg viewBox="0 0 120 120" width="{size}" height="{size}" style="flex-shrink:0;">
+            <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
+            {seg(d24,"#22c55e",0)}{seg(d48,"#f97316",a24)}{seg(d96,"#ef4444",a24+a48)}
+            <text x="{cx}" y="{cy-6}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="17" font-weight="800" fill="#1a2235">{total:,}</text>
+            <text x="{cx}" y="{cy+12}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">αποστολές</text>
+        </svg>"""
 
-    # Right: Delays - 3-segment donut (24h/48h/96h breakdown within each delay bucket
-    with col_r:
-        st.markdown('<div class="section-header">ΚΑΘΥΣΤΕΡΗΣΗ ΠΑΡΑΔΟΣΕΩΝ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
-        c1,c2,c3 = st.columns(3)
-        td = len(delivered)
-        delay_configs = [
-            (c1, 1,  False, "1 ημέρα",   ),
-            (c2, 2,  False, "2 ημέρες",  ),
-            (c3, 3,  True,  "3+ ημέρες", ),
-        ]
+    def card_sla(g, lbl):
+        if not len(g):
+            return f'<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:120px;"><div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:11px;margin-top:8px;">Δεν υπάρχουν</div></div>'
+        ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
+        return f"""<div style="background:white;border-radius:14px;padding:14px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:16px;">
+            {donut_svg(pct,"#22c55e","#fee2e2")}
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">{lbl}</div>
+                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>Εντός &nbsp;<b style="color:#1a2235">{ot:,}</b> <span style="color:#8fa3c0">({pct:.2f}%)</span></div>
+                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:10px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>Εκτός &nbsp;<b style="color:#1a2235">{lat:,}</b> <span style="color:#8fa3c0">({100-pct:.2f}%)</span></div>
+                <div style="font-size:10px;color:#8fa3c0;font-weight:500;">Σύνολο παραδοθέντων</div>
+                <div style="font-size:14px;font-weight:700;color:#1a2235;">{len(g):,}</div>
+            </div>
+        </div>"""
 
-        def three_segment_donut(d24, d48, d96, label):
-            total = d24 + d48 + d96
-            r = 38; cx = cy = 50; sw = 12
-            circ = 2 * 3.14159265 * r
-            if total == 0:
-                return f"""<div style="text-align:center;padding:6px 0 2px;">
-                    <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;line-height:1.3;">{label} καθυστέρηση</div>
-                    <svg viewBox="0 0 100 100" width="100" height="100" style="display:block;margin:0 auto;">
-                        <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
-                        <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                            font-family="Plus Jakarta Sans,sans-serif" font-size="15" font-weight="800" fill="#1a2235">0</text>
-                    </svg></div>"""
-            gap = circ * 0.018
-            def seg(count, color, offset):
-                length = (count / total) * circ - gap
-                if length <= 0: return ""
-                return f"""<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{sw}"
-                    stroke-dasharray="{length:.3f} {circ-length:.3f}"
-                    stroke-linecap="butt"
-                    transform="rotate({offset-90} {cx} {cy})"/>"""
-            a24 = (d24/total)*360; a48 = (d48/total)*360
-            return f"""<div style="text-align:center;padding:6px 0 2px;">
-                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;line-height:1.3;">{label} καθυστέρηση</div>
-                <svg viewBox="0 0 100 100" width="100" height="100" style="display:block;margin:0 auto;">
-                    <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
-                    {seg(d24,"#22c55e",0)}{seg(d48,"#f97316",a24)}{seg(d96,"#ef4444",a24+a48)}
-                    <text x="{cx}" y="{cy-4}" text-anchor="middle" dominant-baseline="central"
-                        font-family="Plus Jakarta Sans,sans-serif" font-size="15" font-weight="800" fill="#1a2235">{total:,}</text>
-                    <text x="{cx}" y="{cy+13}" text-anchor="middle"
-                        font-family="Plus Jakarta Sans,sans-serif" font-size="7" font-weight="600" fill="#8fa3c0">αποστολές</text>
-                </svg>
-            </div>"""
+    def card_delay(dd, lbl, td):
+        n   = len(dd)
+        d24 = len(dd[dd["sla_days"]==1]); d48 = len(dd[dd["sla_days"]==2]); d96 = len(dd[dd["sla_days"]==4])
+        p24 = round(d24/n*100,1) if n else 0; p48 = round(d48/n*100,1) if n else 0; p96 = round(d96/n*100,1) if n else 0
+        pct_tot = round(n/td*100,1) if td else 0
+        return f"""<div style="background:white;border-radius:14px;padding:14px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:16px;">
+            {seg_svg(d24,d48,d96)}
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">{lbl} καθυστέρηση</div>
+                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>24h &nbsp;<b style="color:#1a2235">{d24:,}</b> <span style="color:#8fa3c0">({p24}%)</span></div>
+                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;margin-right:6px;"></span>48h &nbsp;<b style="color:#1a2235">{d48:,}</b> <span style="color:#8fa3c0">({p48}%)</span></div>
+                <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:10px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>96h &nbsp;<b style="color:#1a2235">{d96:,}</b> <span style="color:#8fa3c0">({p96}%)</span></div>
+                <div style="font-size:10px;color:#8fa3c0;font-weight:500;">% επί παραδοθέντων</div>
+                <div style="font-size:14px;font-weight:700;color:#1a2235;">{pct_tot}%</div>
+            </div>
+        </div>"""
 
-        for col, days, use_gte, lbl in delay_configs:
-            with col:
-                dd  = delivered[delivered["delay_days"] >= days] if use_gte else delivered[delivered["delay_days"] == days]
-                n   = len(dd)
-                d24 = len(dd[dd["sla_days"]==1])
-                d48 = len(dd[dd["sla_days"]==2])
-                d96 = len(dd[dd["sla_days"]==4])
-                p24 = round(d24/n*100,1) if n else 0
-                p48 = round(d48/n*100,1) if n else 0
-                p96 = round(d96/n*100,1) if n else 0
-                pct_of_total = round(n/td*100,1) if td else 0
-                st.markdown(f"""
-                <div style="background:white;border-radius:14px;padding:14px 12px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;">
-                    {three_segment_donut(d24, d48, d96, lbl)}
-                    <div style="margin-top:10px;padding:0 4px;">
-                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>24h &nbsp;<b>{d24:,}</b> ({p24}%)</div>
-                        <div class="legend-row"><span class="legend-dot" style="background:#f97316"></span>48h &nbsp;<b>{d48:,}</b> ({p48}%)</div>
-                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>96h &nbsp;<b>{d96:,}</b> ({p96}%)</div>
-                        <div class="total-lbl" style="margin-top:8px;">% επί παραδοθέντων</div>
-                        <div class="total-val">{pct_of_total}%</div>
-                    </div>
-                </div>""", unsafe_allow_html=True)
-        st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:6px;'>Σύνολο παραδοθέντων: {td:,}</div>", unsafe_allow_html=True)
+    td = len(delivered)
+
+    # Row 1: SLA by type
+    st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΧΡΟΝΟ ΠΑΡΑΔΟΣΗΣ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
+    r1c1, r1c2, r1c3 = st.columns(3)
+    for col, sd, lbl in [(r1c1,1,"24h (1 εργάσιμη)"),(r1c2,2,"48h (2 εργάσιμες)"),(r1c3,4,"96h (4 εργάσιμες)")]:
+        with col:
+            st.markdown(card_sla(delivered[delivered["sla_days"]==sd], lbl), unsafe_allow_html=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Row 2: Delays
+    st.markdown('<div class="section-header">ΚΑΘΥΣΤΕΡΗΣΗ ΠΑΡΑΔΟΣΕΩΝ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
+    r2c1, r2c2, r2c3 = st.columns(3)
+    for col, days, use_gte, lbl in [(r2c1,1,False,"1 ημέρα"),(r2c2,2,False,"2 ημέρες"),(r2c3,3,True,"3+ ημέρες")]:
+        with col:
+            dd = delivered[delivered["delay_days"]>=days] if use_gte else delivered[delivered["delay_days"]==days]
+            st.markdown(card_delay(dd, lbl, td), unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:4px;'>Σύνολο παραδοθέντων: {td:,}</div>", unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -815,7 +842,7 @@ elif "Νομού" in page:
     with sort_col1:
         st.markdown("#### 📊 Σύγκριση ανά Νομό")
     with sort_col2:
-        sort_dir = st.radio("Ταξινόμηση", ["▲", "▼"], horizontal=True, key="sort_dir")
+        sort_dir = st.radio("Ταξινόμηση", ["▲", "▼"], horizontal=True, key="sort_dir", label_visibility="collapsed")
 
     ascending = sort_dir == "▼"
     merged_sorted = merged.sort_values("diff", ascending=ascending)
@@ -863,9 +890,8 @@ elif "Νομού" in page:
 
     # ══ TABLE ══
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    tbl = merged_sorted[["Περιοχή","sla_pct_A","total_A","sla_pct_B","total_B","diff","arrow"]].copy()
-    tbl.columns = ["Περιοχή","SLA% Α","Αποστολές Α","SLA% Β","Αποστολές Β","Μεταβολή %",""]
+    tbl = merged_sorted[["Περιοχή","sla_pct_A","total_A","sla_pct_B","total_B","diff","diff_label"]].copy()
+    tbl.columns = ["Περιοχή","SLA% Α","Αποστολές Α","SLA% Β","Αποστολές Β","Μεταβολή",""]
     tbl["Αποστολές Α"] = tbl["Αποστολές Α"].astype(int)
     tbl["Αποστολές Β"] = tbl["Αποστολές Β"].astype(int)
-    tbl = tbl.sort_values("Διαφορά (pp)", ascending=True)
     st.dataframe(tbl, use_container_width=True, hide_index=True)
