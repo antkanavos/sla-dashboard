@@ -437,24 +437,24 @@ if "Επισκόπηση" in page:
 
     # Donut helper — renders as full-width SVG inside a white card, no plotly widget
     def donut_html(pct, c_in, c_out, label):
-        """Pure HTML/SVG donut — no Streamlit widget ID issues, scales with column"""
-        r = 54; cx = cy = 70; stroke = 18
+        """Pure SVG donut — fixed geometry so nothing gets clipped"""
+        r = 38; cx = cy = 50; stroke = 12
         circumference = 2 * 3.14159 * r
         filled = circumference * pct / 100
         gap    = circumference - filled
         return f"""
-        <div style="text-align:center; padding: 8px 0 4px;">
-            <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label}</div>
-            <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
+        <div style="text-align:center;padding:6px 0 2px;">
+            <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;line-height:1.3;">{label}</div>
+            <svg viewBox="0 0 100 100" width="100" height="100" style="display:block;margin:0 auto;">
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
                     stroke-dasharray="{filled:.2f} {gap:.2f}"
                     stroke-linecap="round"
                     transform="rotate(-90 {cx} {cy})"/>
-                <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                    font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
-                <text x="{cx}" y="{cy+18}" text-anchor="middle"
-                    font-family="Plus Jakarta Sans, sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+                <text x="{cx}" y="{cy-4}" text-anchor="middle" dominant-baseline="central"
+                    font-family="Plus Jakarta Sans,sans-serif" font-size="15" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+                <text x="{cx}" y="{cy+13}" text-anchor="middle"
+                    font-family="Plus Jakarta Sans,sans-serif" font-size="7" font-weight="600" fill="#8fa3c0">εντός SLA</text>
             </svg>
         </div>"""
 
@@ -496,44 +496,35 @@ if "Επισκόπηση" in page:
         ]
 
         def three_segment_donut(d24, d48, d96, label):
-            """SVG donut split into 3 segments: green=24h, orange=48h, red=96h"""
             total = d24 + d48 + d96
-            r = 44; cx = cy = 60; sw = 14
+            r = 38; cx = cy = 50; sw = 12
             circ = 2 * 3.14159265 * r
             if total == 0:
-                return f"""<div style="text-align:center;padding:8px 0 4px;">
-                    <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label} καθυστέρηση</div>
-                    <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
+                return f"""<div style="text-align:center;padding:6px 0 2px;">
+                    <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;line-height:1.3;">{label} καθυστέρηση</div>
+                    <svg viewBox="0 0 100 100" width="100" height="100" style="display:block;margin:0 auto;">
                         <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
                         <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                            font-family="Plus Jakarta Sans,sans-serif" font-size="20" font-weight="800" fill="#1a2235">0</text>
+                            font-family="Plus Jakarta Sans,sans-serif" font-size="15" font-weight="800" fill="#1a2235">0</text>
                     </svg></div>"""
-
-            gap = circ * 0.015
-
+            gap = circ * 0.018
             def seg(count, color, offset):
                 length = (count / total) * circ - gap
                 if length <= 0: return ""
                 return f"""<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{sw}"
-                    stroke-dasharray="{length:.3f} {circ - length:.3f}"
+                    stroke-dasharray="{length:.3f} {circ-length:.3f}"
                     stroke-linecap="butt"
-                    transform="rotate({offset - 90} {cx} {cy})"/>"""
-
-            a24  = (d24 / total) * 360
-            a48  = (d48 / total) * 360
-            s24  = seg(d24, "#22c55e", 0)
-            s48  = seg(d48, "#f97316", a24)
-            s96  = seg(d96, "#ef4444", a24 + a48)
-
-            return f"""<div style="text-align:center;padding:8px 0 4px;">
-                <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label} καθυστέρηση</div>
-                <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
+                    transform="rotate({offset-90} {cx} {cy})"/>"""
+            a24 = (d24/total)*360; a48 = (d48/total)*360
+            return f"""<div style="text-align:center;padding:6px 0 2px;">
+                <div style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;line-height:1.3;">{label} καθυστέρηση</div>
+                <svg viewBox="0 0 100 100" width="100" height="100" style="display:block;margin:0 auto;">
                     <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
-                    {s24}{s48}{s96}
-                    <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                        font-family="Plus Jakarta Sans,sans-serif" font-size="20" font-weight="800" fill="#1a2235">{total:,}</text>
-                    <text x="{cx}" y="{cy+18}" text-anchor="middle"
-                        font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">αποστολές</text>
+                    {seg(d24,"#22c55e",0)}{seg(d48,"#f97316",a24)}{seg(d96,"#ef4444",a24+a48)}
+                    <text x="{cx}" y="{cy-4}" text-anchor="middle" dominant-baseline="central"
+                        font-family="Plus Jakarta Sans,sans-serif" font-size="15" font-weight="800" fill="#1a2235">{total:,}</text>
+                    <text x="{cx}" y="{cy+13}" text-anchor="middle"
+                        font-family="Plus Jakarta Sans,sans-serif" font-size="7" font-weight="600" fill="#8fa3c0">αποστολές</text>
                 </svg>
             </div>"""
 
@@ -765,37 +756,45 @@ elif "Νομού" in page:
     merged["diff"]  = (merged["sla_pct_B"] - merged["sla_pct_A"]).round(2)
     merged["arrow"] = merged["diff"].apply(lambda d: "▲" if d > 0.5 else ("▼" if d < -0.5 else "→"))
     merged["arrow_color"] = merged["diff"].apply(lambda d: "#16a34a" if d > 0.5 else ("#ef4444" if d < -0.5 else "#8fa3c0"))
+    merged["diff_label"] = merged.apply(
+        lambda r: f"{r['arrow']} {abs(r['diff']):.1f}%", axis=1
+    )
 
-    # ══ SCATTER: Α vs Β ══
+    # ══ SCATTER ══
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown("#### 🔵 Scatter — Περίοδος Α vs Β")
-    st.markdown('<div class="section-sub">Πάνω από τη διαγώνιο = βελτίωση στην Β · Κάτω = χειροτέρεμα</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Hover για λεπτομέρειες · Πάνω από τη διαγώνιο = βελτίωση στην Β · Κάτω = χειροτέρεμα</div>', unsafe_allow_html=True)
 
     fig_sc = go.Figure()
-
-    # Diagonal reference line
-    fig_sc.add_shape(type="line", x0=0, y0=0, x1=100, y1=100,
+    fig_sc.add_shape(type="line", x0=50, y0=50, x1=100, y1=100,
                      line=dict(color="#e2e8f0", width=1.5, dash="dot"))
 
-    # Color by diff
     colors = merged["diff"].apply(lambda d: "#22c55e" if d > 0.5 else ("#ef4444" if d < -0.5 else "#94a3b8")).tolist()
 
     fig_sc.add_trace(go.Scatter(
         x=merged["sla_pct_A"], y=merged["sla_pct_B"],
-        mode="markers+text",
-        marker=dict(size=merged["total_A"].clip(10,500).apply(lambda x: 8 + x/100).tolist(),
-                    color=colors, opacity=0.85,
-                    line=dict(color="white", width=1.5)),
+        mode="markers",
+        marker=dict(
+            size=12,
+            color=colors, opacity=0.85,
+            line=dict(color="white", width=1.5)
+        ),
         text=merged["Περιοχή"],
-        textposition="top center",
-        textfont=dict(size=9, family="Plus Jakarta Sans"),
-        hovertemplate="<b>%{text}</b><br>Α: %{x:.1f}%<br>Β: %{y:.1f}%<extra></extra>",
+        customdata=merged[["diff_label","total_A","total_B"]].values,
+        hovertemplate=(
+            "<b>%{text}</b><br>"
+            "Περίοδος Α: %{x:.1f}%<br>"
+            "Περίοδος Β: %{y:.1f}%<br>"
+            "Μεταβολή: %{customdata[0]}<br>"
+            "Αποστολές Α: %{customdata[1]:.0f} · Β: %{customdata[2]:.0f}"
+            "<extra></extra>"
+        ),
     ))
 
     fig_sc.update_layout(
-        height=480,
+        height=420,
         paper_bgcolor="white", plot_bgcolor="white",
-        margin=dict(t=20, b=40, l=50, r=20),
+        margin=dict(t=10, b=40, l=50, r=20),
         font=dict(family="Plus Jakarta Sans"),
         xaxis=dict(title="SLA % — Περίοδος Α", range=[50,102], ticksuffix="%",
                    gridcolor="#f0f2f5", showgrid=True),
@@ -803,63 +802,58 @@ elif "Νομού" in page:
                    gridcolor="#f0f2f5", showgrid=True),
         showlegend=False,
     )
-    # Annotation quadrants
-    fig_sc.add_annotation(x=98, y=55, text="📉 Χειροτέρεμα", showarrow=False,
-                          font=dict(size=10, color="#ef4444"), opacity=0.6)
-    fig_sc.add_annotation(x=55, y=98, text="📈 Βελτίωση", showarrow=False,
-                          font=dict(size=10, color="#22c55e"), opacity=0.6)
+    fig_sc.add_annotation(x=100, y=54, text="📉 Χειροτέρεμα", showarrow=False,
+                          font=dict(size=10, color="#ef4444"), xanchor="right")
+    fig_sc.add_annotation(x=52, y=100, text="📈 Βελτίωση", showarrow=False,
+                          font=dict(size=10, color="#22c55e"), xanchor="left")
     st.plotly_chart(fig_sc, use_container_width=True)
 
     # ══ BULLET BARS ══
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    st.markdown("#### 📊 Σύγκριση ανά Νομό")
+
+    sort_col1, sort_col2 = st.columns([3,1])
+    with sort_col1:
+        st.markdown("#### 📊 Σύγκριση ανά Νομό")
+    with sort_col2:
+        sort_dir = st.radio("Ταξινόμηση", ["▲", "▼"], horizontal=True, key="sort_dir")
+
+    ascending = sort_dir == "▼"
+    merged_sorted = merged.sort_values("diff", ascending=ascending)
+    regions = merged_sorted["Περιοχή"].tolist()
 
     fig_bar = go.Figure()
-
-    regions   = merged["Περιοχή"].tolist()
-    y_pos     = list(range(len(regions)))
-
-    # Period A bars (solid)
     fig_bar.add_trace(go.Bar(
-        y=regions, x=merged["sla_pct_A"],
+        y=regions, x=merged_sorted["sla_pct_A"],
         orientation="h", name="Περίοδος Α",
-        marker_color="#7c3aed",
-        opacity=0.5,
-        width=0.35,
-        offset=-0.35,
+        marker_color="#7c3aed", opacity=0.45,
+        width=0.35, offset=-0.35,
         hovertemplate="<b>%{y}</b><br>Περίοδος Α: %{x:.1f}%<extra></extra>",
     ))
-
-    # Period B bars (solid)
     fig_bar.add_trace(go.Bar(
-        y=regions, x=merged["sla_pct_B"],
+        y=regions, x=merged_sorted["sla_pct_B"],
         orientation="h", name="Περίοδος Β",
-        marker_color="#0ea5e9",
-        opacity=0.85,
-        width=0.35,
-        offset=0,
+        marker_color="#0ea5e9", opacity=0.85,
+        width=0.35, offset=0,
         hovertemplate="<b>%{y}</b><br>Περίοδος Β: %{x:.1f}%<extra></extra>",
     ))
 
-    # Diff annotations (arrows)
-    for _, row in merged.iterrows():
-        diff_txt = f"{row['arrow']} {abs(row['diff']):.1f}pp"
+    for _, row in merged_sorted.iterrows():
         fig_bar.add_annotation(
             y=row["Περιοχή"],
-            x=max(row["sla_pct_A"], row["sla_pct_B"]) + 1.5,
-            text=f"<b style='color:{row['arrow_color']}'>{diff_txt}</b>",
+            x=max(row["sla_pct_A"], row["sla_pct_B"]) + 1,
+            text=f"<b>{row['diff_label']}</b>",
             showarrow=False,
             font=dict(size=10, color=row["arrow_color"], family="Plus Jakarta Sans"),
             xanchor="left",
         )
 
     fig_bar.update_layout(
-        height=max(420, len(regions) * 38),
+        height=max(400, len(regions)*36),
         barmode="overlay",
         paper_bgcolor="white", plot_bgcolor="white",
-        margin=dict(t=10, b=20, l=20, r=100),
+        margin=dict(t=10, b=20, l=20, r=90),
         font=dict(family="Plus Jakarta Sans"),
-        xaxis=dict(range=[50, 110], ticksuffix="%", gridcolor="#f0f2f5"),
+        xaxis=dict(range=[50,112], ticksuffix="%", gridcolor="#f0f2f5"),
         yaxis=dict(autorange="reversed"),
         legend=dict(orientation="h", y=1.03, x=0,
                     font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
@@ -869,8 +863,8 @@ elif "Νομού" in page:
 
     # ══ TABLE ══
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    tbl = merged[["Περιοχή","sla_pct_A","total_A","sla_pct_B","total_B","diff","arrow"]].copy()
-    tbl.columns = ["Περιοχή","SLA% Α","Αποστολές Α","SLA% Β","Αποστολές Β","Διαφορά (pp)",""]
+    tbl = merged_sorted[["Περιοχή","sla_pct_A","total_A","sla_pct_B","total_B","diff","arrow"]].copy()
+    tbl.columns = ["Περιοχή","SLA% Α","Αποστολές Α","SLA% Β","Αποστολές Β","Μεταβολή %",""]
     tbl["Αποστολές Α"] = tbl["Αποστολές Α"].astype(int)
     tbl["Αποστολές Β"] = tbl["Αποστολές Β"].astype(int)
     tbl = tbl.sort_values("Διαφορά (pp)", ascending=True)
