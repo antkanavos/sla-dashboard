@@ -386,10 +386,7 @@ with st.sidebar:
 
     page = st.radio("Πλοήγηση", [
         "🏠  Επισκόπηση",
-        "📈  Ιστορικό",
-        "🔁  Recurring Misses",
         "🗺️  Ανάλυση Νομού",
-        "⚙️  Ρυθμίσεις",
     ], label_visibility="collapsed")
 
     st.markdown(f"""
@@ -403,9 +400,9 @@ min_d = df_full["Ημ/νία Δημιουργίας"].min().date()
 max_d = df_full["Ημ/νία Δημιουργίας"].max().date()
 
 fc1,fc2,fc3 = st.columns([2,2,4])
-with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df")
-with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt")
-with fc3: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:10px;'>Τελευταία ενημέρωση: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;🔄</div>", unsafe_allow_html=True)
+with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας αποστολής")
+with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας αποστολής")
+with fc3: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:10px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; Τελευταία ενημέρωση: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;🔄</div>", unsafe_allow_html=True)
 
 df = df_full[
     (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
@@ -447,17 +444,17 @@ if "Επισκόπηση" in page:
         gap    = circumference - filled
         return f"""
         <div style="text-align:center; padding: 8px 0 4px;">
-            <div style="font-size:12px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">{label}</div>
-            <svg viewBox="0 0 140 140" width="140" height="140" style="display:block;margin:0 auto;">
+            <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label}</div>
+            <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
                     stroke-dasharray="{filled:.2f} {gap:.2f}"
                     stroke-linecap="round"
                     transform="rotate(-90 {cx} {cy})"/>
                 <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                    font-family="Plus Jakarta Sans, sans-serif" font-size="18" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
-                <text x="{cx}" y="{cy+20}" text-anchor="middle"
-                    font-family="Plus Jakarta Sans, sans-serif" font-size="9" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+                    font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+                <text x="{cx}" y="{cy+18}" text-anchor="middle"
+                    font-family="Plus Jakarta Sans, sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">εντός SLA</text>
             </svg>
         </div>"""
 
@@ -486,36 +483,83 @@ if "Επισκόπηση" in page:
                     </div>
                 </div>""", unsafe_allow_html=True)
 
-    # Right: Delays
+    # Right: Delays - 3-segment donut (24h/48h/96h breakdown within each delay bucket
     with col_r:
         st.markdown('<div class="section-header">ΚΑΘΥΣΤΕΡΗΣΗ ΠΑΡΑΔΟΣΕΩΝ</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-sub">(ΟΛΟ ΤΟ ΔΙΑΣΤΗΜΑ)</div>', unsafe_allow_html=True)
         c1,c2,c3 = st.columns(3)
         td = len(delivered)
         delay_configs = [
-            (c1, 1,  False, "1 ημέρα",   "#f97316"),
-            (c2, 2,  False, "2 ημέρες",  "#f59e0b"),
-            (c3, 3,  True,  "3+ ημέρες", "#ef4444"),
+            (c1, 1,  False, "1 ημέρα",   ),
+            (c2, 2,  False, "2 ημέρες",  ),
+            (c3, 3,  True,  "3+ ημέρες", ),
         ]
-        for col, days, use_gte, lbl, color in delay_configs:
+
+        def three_segment_donut(d24, d48, d96, label):
+            """SVG donut split into 3 segments: green=24h, orange=48h, red=96h"""
+            total = d24 + d48 + d96
+            r = 44; cx = cy = 60; sw = 14
+            circ = 2 * 3.14159265 * r
+            if total == 0:
+                return f"""<div style="text-align:center;padding:8px 0 4px;">
+                    <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label} καθυστέρηση</div>
+                    <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
+                        <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
+                        <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
+                            font-family="Plus Jakarta Sans,sans-serif" font-size="20" font-weight="800" fill="#1a2235">0</text>
+                    </svg></div>"""
+
+            gap = circ * 0.015
+
+            def seg(count, color, offset):
+                length = (count / total) * circ - gap
+                if length <= 0: return ""
+                return f"""<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{sw}"
+                    stroke-dasharray="{length:.3f} {circ - length:.3f}"
+                    stroke-linecap="butt"
+                    transform="rotate({offset - 90} {cx} {cy})"/>"""
+
+            a24  = (d24 / total) * 360
+            a48  = (d48 / total) * 360
+            s24  = seg(d24, "#22c55e", 0)
+            s48  = seg(d48, "#f97316", a24)
+            s96  = seg(d96, "#ef4444", a24 + a48)
+
+            return f"""<div style="text-align:center;padding:8px 0 4px;">
+                <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">{label} καθυστέρηση</div>
+                <svg viewBox="0 0 120 120" width="120" height="120" style="display:block;margin:0 auto;">
+                    <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
+                    {s24}{s48}{s96}
+                    <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
+                        font-family="Plus Jakarta Sans,sans-serif" font-size="20" font-weight="800" fill="#1a2235">{total:,}</text>
+                    <text x="{cx}" y="{cy+18}" text-anchor="middle"
+                        font-family="Plus Jakarta Sans,sans-serif" font-size="8" font-weight="600" fill="#8fa3c0">αποστολές</text>
+                </svg>
+            </div>"""
+
+        for col, days, use_gte, lbl in delay_configs:
             with col:
                 dd  = delivered[delivered["delay_days"] >= days] if use_gte else delivered[delivered["delay_days"] == days]
                 n   = len(dd)
-                pct = n/td*100 if td else 0
-                d24 = len(dd[dd["sla_days"]==1]); d48 = len(dd[dd["sla_days"]==2]); d96 = len(dd[dd["sla_days"]==4])
-                p24 = round(d24/n*100,2) if n else 0; p48 = round(d48/n*100,2) if n else 0; p96 = round(d96/n*100,2) if n else 0
+                d24 = len(dd[dd["sla_days"]==1])
+                d48 = len(dd[dd["sla_days"]==2])
+                d96 = len(dd[dd["sla_days"]==4])
+                p24 = round(d24/n*100,1) if n else 0
+                p48 = round(d48/n*100,1) if n else 0
+                p96 = round(d96/n*100,1) if n else 0
+                pct_of_total = round(n/td*100,1) if td else 0
                 st.markdown(f"""
                 <div style="background:white;border-radius:14px;padding:14px 12px 16px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;">
-                    {donut_html(pct, color, "#f0f2f5", lbl + " καθυστέρηση")}
+                    {three_segment_donut(d24, d48, d96, lbl)}
                     <div style="margin-top:10px;padding:0 4px;">
-                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>24h &nbsp;<b>{d24}</b> ({p24:.1f}%)</div>
-                        <div class="legend-row"><span class="legend-dot" style="background:{color}"></span>48h &nbsp;<b>{d48}</b> ({p48:.1f}%)</div>
-                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>96h &nbsp;<b>{d96}</b> ({p96:.1f}%)</div>
-                        <div class="total-lbl" style="margin-top:8px;">Σύνολο με {lbl}</div>
-                        <div class="total-val">{n:,}</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:#22c55e"></span>24h &nbsp;<b>{d24:,}</b> ({p24}%)</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:#f97316"></span>48h &nbsp;<b>{d48:,}</b> ({p48}%)</div>
+                        <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span>96h &nbsp;<b>{d96:,}</b> ({p96}%)</div>
+                        <div class="total-lbl" style="margin-top:8px;">% επί παραδοθέντων</div>
+                        <div class="total-val">{pct_of_total}%</div>
                     </div>
                 </div>""", unsafe_allow_html=True)
-        st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:6px;'>Επί συνόλου παραδοθέντων ({td:,})</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:10px;color:#8fa3c0;text-align:right;margin-top:6px;'>Σύνολο παραδοθέντων: {td:,}</div>", unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -679,104 +723,155 @@ elif "Ιστορικό" in page:
         </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════
-# PAGE: RECURRING MISSES
-# ══════════════════════════════════════════════
-elif "Recurring" in page:
-    st.markdown('<div class="section-header">RECURRING MISSES</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Πελάτες με επαναλαμβανόμενες καθυστερήσεις σε όλο το ιστορικό</div>', unsafe_allow_html=True)
-
-    snapshots = load_index()
-    if len(snapshots) < 2:
-        st.info("Χρειάζονται τουλάχιστον 2 snapshots. Κάνε push νέο data.csv και άνοιξε ξανά την Επισκόπηση.")
-        st.stop()
-
-    miss_counter = defaultdict(int)
-    for snap in snapshots:
-        det = load_detail(snap["date"])
-        if det and "top_missed_customers" in det:
-            for row in det["top_missed_customers"]:
-                miss_counter[row["KEY_CLEAN"]] += row["misses"]
-
-    miss_df = pd.DataFrame([
-        {"Κωδικός Πελάτη": k, "Συνολικές Καθυστερήσεις": v}
-        for k,v in sorted(miss_counter.items(), key=lambda x: -x[1])
-    ]).head(30)
-
-    fig = px.bar(miss_df, x="Κωδικός Πελάτη", y="Συνολικές Καθυστερήσεις",
-                 color="Συνολικές Καθυστερήσεις",
-                 color_continuous_scale=["#fde68a","#f97316","#ef4444"],
-                 title="Top 30 πελάτες με τις περισσότερες καθυστερήσεις")
-    fig.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white",
-                      margin=dict(t=40,b=60,l=40,r=10),
-                      font=dict(family="Plus Jakarta Sans"), coloraxis_showscale=False,
-                      xaxis=dict(tickangle=45))
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(miss_df, use_container_width=True, hide_index=True)
-
-# ══════════════════════════════════════════════
 # PAGE: ΑΝΑΛΥΣΗ ΝΟΜΟΥ
 # ══════════════════════════════════════════════
 elif "Νομού" in page:
     st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΝΟΜΟ / ΠΕΡΙΟΧΗ</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Βάσει Regional Unity (φίλτρο ημερομηνιών ισχύει)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Σύγκριση δύο περιόδων βάσει ημερομηνίας δημιουργίας</div>', unsafe_allow_html=True)
 
-    if "Regional Unity" not in delivered.columns or delivered["Regional Unity"].isna().all():
-        st.info("Δεν υπάρχουν δεδομένα Regional Unity στο τρέχον φίλτρο.")
+    # ---- Period selectors ----
+    all_min = df_full["Ημ/νία Δημιουργίας"].min().date()
+    all_max = df_full["Ημ/νία Δημιουργίας"].max().date()
+
+    pa1, pa2, pb1, pb2, _ = st.columns([2,2,2,2,1])
+    with pa1: p1_from = st.date_input("Περίοδος Α — Από", value=all_min, min_value=all_min, max_value=all_max, key="p1f")
+    with pa2: p1_to   = st.date_input("Περίοδος Α — Έως", value=all_max, min_value=all_min, max_value=all_max, key="p1t")
+    with pb1: p2_from = st.date_input("Περίοδος Β — Από", value=all_min, min_value=all_min, max_value=all_max, key="p2f")
+    with pb2: p2_to   = st.date_input("Περίοδος Β — Έως", value=all_max, min_value=all_min, max_value=all_max, key="p2t")
+
+    def reg_stats(df_src, d_from, d_to):
+        mask = (df_src["Ημ/νία Δημιουργίας"].dt.date >= d_from) & (df_src["Ημ/νία Δημιουργίας"].dt.date <= d_to)
+        sub  = df_src[mask]
+        del_sub, _ = metrics(sub)
+        if not len(del_sub) or "Regional Unity" not in del_sub.columns:
+            return pd.DataFrame()
+        r = (del_sub.groupby("Regional Unity")
+             .agg(total=("on_time","count"), on_time=("on_time","sum"))
+             .reset_index())
+        r["sla_pct"] = (r["on_time"] / r["total"] * 100).round(2)
+        return r.rename(columns={"Regional Unity":"Περιοχή"})
+
+    r1 = reg_stats(df_full, p1_from, p1_to)
+    r2 = reg_stats(df_full, p2_from, p2_to)
+
+    if r1.empty or r2.empty:
+        st.info("Δεν υπάρχουν δεδομένα Regional Unity για μία από τις περιόδους.")
         st.stop()
 
-    reg = (delivered.groupby("Regional Unity")
-           .agg(Σύνολο=("on_time","count"), Εντός_SLA=("on_time","sum"))
-           .reset_index().rename(columns={"Regional Unity":"Περιοχή"}))
-    reg["SLA %"] = (reg["Εντός_SLA"]/reg["Σύνολο"]*100).round(2)
-    reg = reg.sort_values("SLA %", ascending=True)
+    # ---- Merge ----
+    merged = r1[["Περιοχή","sla_pct","total"]].merge(
+        r2[["Περιοχή","sla_pct","total"]], on="Περιοχή", how="outer", suffixes=("_A","_B")
+    ).fillna(0).sort_values("sla_pct_A", ascending=True)
+    merged["diff"]  = (merged["sla_pct_B"] - merged["sla_pct_A"]).round(2)
+    merged["arrow"] = merged["diff"].apply(lambda d: "▲" if d > 0.5 else ("▼" if d < -0.5 else "→"))
+    merged["arrow_color"] = merged["diff"].apply(lambda d: "#16a34a" if d > 0.5 else ("#ef4444" if d < -0.5 else "#8fa3c0"))
 
-    fig = px.bar(reg, x="SLA %", y="Περιοχή", orientation="h",
-                 color="SLA %", color_continuous_scale=["#ef4444","#f97316","#22c55e"],
-                 range_color=[50,100], text=reg["SLA %"].apply(lambda x: f"{x:.1f}%"))
-    fig.update_traces(textposition="outside")
-    fig.update_layout(height=max(400,len(reg)*26), paper_bgcolor="white", plot_bgcolor="white",
-                      margin=dict(t=10,b=20,l=20,r=70),
-                      font=dict(family="Plus Jakarta Sans"), coloraxis_showscale=False,
-                      xaxis=dict(range=[0,112], ticksuffix="%"))
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(reg.sort_values("SLA %")[["Περιοχή","Σύνολο","Εντός_SLA","SLA %"]],
-                 use_container_width=True, hide_index=True)
+    # ══ SCATTER: Α vs Β ══
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown("#### 🔵 Scatter — Περίοδος Α vs Β")
+    st.markdown('<div class="section-sub">Πάνω από τη διαγώνιο = βελτίωση στην Β · Κάτω = χειροτέρεμα</div>', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════
-# PAGE: ΡΥΘΜΙΣΕΙΣ
-# ══════════════════════════════════════════════
-elif "Ρυθμίσεις" in page:
-    st.markdown('<div class="section-header">ΡΥΘΜΙΣΕΙΣ</div>', unsafe_allow_html=True)
+    fig_sc = go.Figure()
 
-    st.markdown("#### 🔗 GitHub Σύνδεση")
-    if GH_TOKEN and GH_REPO:
-        st.success(f"✅ Συνδεδεμένο: `{GH_REPO}` — branch: `{GH_BRANCH}`")
-    else:
-        st.error("❌ Δεν έχουν οριστεί GitHub credentials στα Secrets")
+    # Diagonal reference line
+    fig_sc.add_shape(type="line", x0=0, y0=0, x1=100, y1=100,
+                     line=dict(color="#e2e8f0", width=1.5, dash="dot"))
 
-    st.markdown("#### 💾 Snapshots")
-    snapshots = load_index()
-    st.info(f"Υπάρχουν **{len(snapshots)}** snapshots αποθηκευμένα στο GitHub (`history/`)")
+    # Color by diff
+    colors = merged["diff"].apply(lambda d: "#22c55e" if d > 0.5 else ("#ef4444" if d < -0.5 else "#94a3b8")).tolist()
 
-    if st.button("🔄 Αναγκαστικό snapshot τώρα"):
-        with st.spinner("Αποθήκευση..."):
-            df_proc, n_new, n_upd, changed, mt_sha = update_master_table(df_full)
-            save_master_table(df_proc, mt_sha)
-            d_all, m_all = metrics(df_full)
-            snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_upd)
-            ok = save_snapshot(snap)
-        st.success(f"✅ Snapshot αποθηκεύτηκε! ({n_new} νέες, {n_upd} ενημερώσεις)") if ok else st.error("❌ Αποτυχία")
+    fig_sc.add_trace(go.Scatter(
+        x=merged["sla_pct_A"], y=merged["sla_pct_B"],
+        mode="markers+text",
+        marker=dict(size=merged["total_A"].clip(10,500).apply(lambda x: 8 + x/100).tolist(),
+                    color=colors, opacity=0.85,
+                    line=dict(color="white", width=1.5)),
+        text=merged["Περιοχή"],
+        textposition="top center",
+        textfont=dict(size=9, family="Plus Jakarta Sans"),
+        hovertemplate="<b>%{text}</b><br>Α: %{x:.1f}%<br>Β: %{y:.1f}%<extra></extra>",
+    ))
 
-    if st.button("🗑️ Εκκαθάριση cache δεδομένων"):
-        load_and_process.clear()
-        load_index.clear()
-        st.success("Cache εκκαθαρίστηκε — ανανέωσε τη σελίδα")
+    fig_sc.update_layout(
+        height=480,
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(t=20, b=40, l=50, r=20),
+        font=dict(family="Plus Jakarta Sans"),
+        xaxis=dict(title="SLA % — Περίοδος Α", range=[50,102], ticksuffix="%",
+                   gridcolor="#f0f2f5", showgrid=True),
+        yaxis=dict(title="SLA % — Περίοδος Β", range=[50,102], ticksuffix="%",
+                   gridcolor="#f0f2f5", showgrid=True),
+        showlegend=False,
+    )
+    # Annotation quadrants
+    fig_sc.add_annotation(x=98, y=55, text="📉 Χειροτέρεμα", showarrow=False,
+                          font=dict(size=10, color="#ef4444"), opacity=0.6)
+    fig_sc.add_annotation(x=55, y=98, text="📈 Βελτίωση", showarrow=False,
+                          font=dict(size=10, color="#22c55e"), opacity=0.6)
+    st.plotly_chart(fig_sc, use_container_width=True)
 
-    st.markdown("#### 📊 Πληροφορίες δεδομένων")
-    st.code(f"""
-Data URL  : {GH_RAW}/data.csv
-Rows      : {len(df_full):,}
-Ημ. range : {df_full['Ημ/νία Δημιουργίας'].min().strftime('%d/%m/%Y')} – {df_full['Ημ/νία Δημιουργίας'].max().strftime('%d/%m/%Y')}
-Missing   : {int(df_full['sla_days'].isna().sum()):,}
-Snapshots : {len(snapshots)}
-    """)
+    # ══ BULLET BARS ══
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown("#### 📊 Σύγκριση ανά Νομό")
+
+    fig_bar = go.Figure()
+
+    regions   = merged["Περιοχή"].tolist()
+    y_pos     = list(range(len(regions)))
+
+    # Period A bars (solid)
+    fig_bar.add_trace(go.Bar(
+        y=regions, x=merged["sla_pct_A"],
+        orientation="h", name="Περίοδος Α",
+        marker_color="#7c3aed",
+        opacity=0.5,
+        width=0.35,
+        offset=-0.35,
+        hovertemplate="<b>%{y}</b><br>Περίοδος Α: %{x:.1f}%<extra></extra>",
+    ))
+
+    # Period B bars (solid)
+    fig_bar.add_trace(go.Bar(
+        y=regions, x=merged["sla_pct_B"],
+        orientation="h", name="Περίοδος Β",
+        marker_color="#0ea5e9",
+        opacity=0.85,
+        width=0.35,
+        offset=0,
+        hovertemplate="<b>%{y}</b><br>Περίοδος Β: %{x:.1f}%<extra></extra>",
+    ))
+
+    # Diff annotations (arrows)
+    for _, row in merged.iterrows():
+        diff_txt = f"{row['arrow']} {abs(row['diff']):.1f}pp"
+        fig_bar.add_annotation(
+            y=row["Περιοχή"],
+            x=max(row["sla_pct_A"], row["sla_pct_B"]) + 1.5,
+            text=f"<b style='color:{row['arrow_color']}'>{diff_txt}</b>",
+            showarrow=False,
+            font=dict(size=10, color=row["arrow_color"], family="Plus Jakarta Sans"),
+            xanchor="left",
+        )
+
+    fig_bar.update_layout(
+        height=max(420, len(regions) * 38),
+        barmode="overlay",
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(t=10, b=20, l=20, r=100),
+        font=dict(family="Plus Jakarta Sans"),
+        xaxis=dict(range=[50, 110], ticksuffix="%", gridcolor="#f0f2f5"),
+        yaxis=dict(autorange="reversed"),
+        legend=dict(orientation="h", y=1.03, x=0,
+                    font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
+        bargap=0.3,
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    # ══ TABLE ══
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    tbl = merged[["Περιοχή","sla_pct_A","total_A","sla_pct_B","total_B","diff","arrow"]].copy()
+    tbl.columns = ["Περιοχή","SLA% Α","Αποστολές Α","SLA% Β","Αποστολές Β","Διαφορά (pp)",""]
+    tbl["Αποστολές Α"] = tbl["Αποστολές Α"].astype(int)
+    tbl["Αποστολές Β"] = tbl["Αποστολές Β"].astype(int)
+    tbl = tbl.sort_values("Διαφορά (pp)", ascending=True)
+    st.dataframe(tbl, use_container_width=True, hide_index=True)
