@@ -398,6 +398,31 @@ def load_and_process():
 
     mt = pd.read_csv(StringIO(mt_content), dtype=str)
 
+    # If master_table has only headers (empty), fallback to data.csv
+    if len(mt) == 0:
+        df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
+        df_raw["KEY_CLEAN"] = df_raw["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
+        df_raw = df_raw[df_raw["KEY_CLEAN"].notna()].reset_index(drop=True)
+        if "Κωδ. Καταστήματος Παράδοσης" in df_raw.columns:
+            df_raw["Κατάστημα"] = (
+                df_raw["Κωδ. Καταστήματος Παράδοσης"].astype(str).str.strip() + " " +
+                df_raw["Κατάστημα Παραλαβής"].astype(str).str.strip()
+            ).str.strip().replace({"nan nan":"—","nan":"—"})
+        else:
+            df_raw["Κατάστημα"] = "—"
+        df_raw["ADDR_CLEAN"] = df_raw["Δ/νση Παράδοσης"].apply(clean_addr)
+        df_raw["POSTCODE"]   = df_raw["Τ.Κ Παράδοσης"].apply(clean_pc)
+        df_raw = do_sla_matching(df_raw, master_sla)
+        df_raw["Ημ/νία Δημιουργίας"] = pd.to_datetime(df_raw["Ημ/νία Δημιουργίας"], dayfirst=True, errors="coerce")
+        df_raw["Ημ/νία Παράδοσης"]   = pd.to_datetime(df_raw["Ημ/νία Παράδοσης"],   dayfirst=True, errors="coerce")
+        df_raw["sla_days"] = df_raw["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
+        def wdays(start, end):
+            if pd.isna(end) or pd.isna(start): return None
+            days = pd.date_range(start, end)
+            return len([d for d in days if d.weekday()!=6 and d.date() not in holidays]) - 1
+        df_raw["working_days"] = df_raw.apply(lambda x: wdays(x["Ημ/νία Δημιουργίας"], x["Ημ/νία Παράδοσης"]), axis=1)
+        return df_raw
+
     # Ensure all columns exist
     for col in ["SLA","Regional_Unity","Working_Days"]:
         if col not in mt.columns:
