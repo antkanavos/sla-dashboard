@@ -337,8 +337,9 @@ def update_master_table(df_new):
 
 def save_master_table(df_master, sha):
     """Save master table CSV to GitHub."""
+    global _DF_FULL
+    _DF_FULL = None  # Reset singleton so next load picks up new data
     load_master_table.clear()
-    load_and_process.clear()
     csv_str = df_master.to_csv(index=False)
     _, current_sha = gh_get(MASTER_TABLE_PATH)
     effective_sha = current_sha or sha
@@ -377,15 +378,14 @@ def save_snapshot(snap, force_new_id=False):
 # ---------- DATA LOADING ----------
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
 
-@st.cache_resource
+# Module-level singleton — loaded once per server process, never reloaded on rerun
+_DF_FULL = None
+
 def load_and_process():
-    """
-    Primary source: master_table.csv
-    - Rows with SLA + Working_Days already set → load directly (no reprocessing)
-    - Rows missing SLA → run matching
-    - Delivered rows missing Working_Days → calculate and cache
-    - All results saved back to master_table
-    """
+    global _DF_FULL
+    if _DF_FULL is not None:
+        return _DF_FULL
+
     from io import StringIO
     import numpy as np
 
@@ -521,7 +521,8 @@ def load_and_process():
         df.loc[needs_wd, "Working_Days"] = [str(r) if r is not None else "" for r in results]
 
     df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
-    return df
+    _DF_FULL = df
+    return _DF_FULL
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
