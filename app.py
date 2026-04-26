@@ -393,13 +393,16 @@ def load_and_process():
     holidays   = load_holidays()
 
     mt_content, mt_sha = gh_get(MASTER_TABLE_PATH)
-    if not mt_content:
-        return pd.DataFrame()
 
-    mt = pd.read_csv(StringIO(mt_content), dtype=str)
+    # Use data.csv directly if master_table is missing or empty (only headers)
+    mt = None
+    if mt_content:
+        try:
+            mt = pd.read_csv(StringIO(mt_content), dtype=str)
+        except:
+            mt = None
 
-    # If master_table has only headers (empty), fallback to data.csv
-    if len(mt) == 0:
+    if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
         df_raw["KEY_CLEAN"] = df_raw["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
         df_raw = df_raw[df_raw["KEY_CLEAN"].notna()].reset_index(drop=True)
@@ -423,7 +426,8 @@ def load_and_process():
         df_raw["working_days"] = df_raw.apply(lambda x: wdays(x["Ημ/νία Δημιουργίας"], x["Ημ/νία Παράδοσης"]), axis=1)
         return df_raw
 
-    # Ensure all columns exist
+    # ── Normal path: master_table has data ──
+    mt_sha = mt_sha  # keep sha for saving later
     for col in ["SLA","Regional_Unity","Working_Days"]:
         if col not in mt.columns:
             mt[col] = ""
