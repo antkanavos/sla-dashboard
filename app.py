@@ -532,21 +532,24 @@ with st.sidebar:
 min_d = df_full["Ημ/νία Δημιουργίας"].min().date()
 max_d = df_full["Ημ/νία Δημιουργίας"].max().date()
 
-# Shop list
-shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
+if "Καταστήματος" not in page:
+    shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
+    fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
+    with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας")
+    with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας")
+    with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="shop")
+    with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
+    df = df_full[
+        (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
+        (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
+    ].copy()
+    if shop_filter != "Όλα":
+        df = df[df["Κατάστημα"] == shop_filter].copy()
+else:
+    date_from = min_d
+    date_to   = max_d
+    df = df_full.copy()
 
-fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
-with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας")
-with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας")
-with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="shop")
-with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
-
-df = df_full[
-    (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
-    (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
-].copy()
-if shop_filter != "Όλα":
-    df = df[df["Κατάστημα"] == shop_filter].copy()
 delivered, m = metrics(df)
 
 # ══════════════════════════════════════════════
@@ -1018,7 +1021,7 @@ elif "Καταστήματος" in page:
     st.markdown('<div class="section-header">ΑΝΑΛΥΣΗ ΑΝΑ ΚΑΤΑΣΤΗΜΑ</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Βάσει φίλτρου ημερομηνιών</div>', unsafe_allow_html=True)
 
-    # Period selectors (same pattern as Νομού)
+    # Period selectors only (no global filters here)
     all_min = df_full["Ημ/νία Δημιουργίας"].min().date()
     all_max = df_full["Ημ/νία Δημιουργίας"].max().date()
 
@@ -1047,13 +1050,14 @@ elif "Καταστήματος" in page:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+    period_a_lbl = f"{s_p1_from.strftime('%d/%m/%Y')} – {s_p1_to.strftime('%d/%m/%Y')}"
+
     # ── TOP 10 / BOTTOM 10 cards ──
-    def shop_cards(grp, title, ascending, color_top, color_bot):
+    def shop_cards(grp, ascending):
         top = grp.sort_values("sla_pct", ascending=ascending).head(10)
         cols = st.columns(5)
         for i, (_, row) in enumerate(top.iterrows()):
             pct = row["sla_pct"]
-            c = color_top if not ascending else color_bot
             badge_col = "#22c55e" if pct>=90 else "#f97316" if pct>=75 else "#ef4444"
             with cols[i % 5]:
                 st.markdown(f"""
@@ -1065,11 +1069,11 @@ elif "Καταστήματος" in page:
                     <div style="font-size:11px;color:#8fa3c0;">{row['total']:,} αποστολές</div>
                 </div>""", unsafe_allow_html=True)
 
-    st.markdown("#### 🏆 Top 10 — Καλύτερη επίδοση")
-    shop_cards(grp_A, "top10", False, "#22c55e", "#ef4444")
+    st.markdown(f'#### 🏆 Top 10 — Καλύτερη επίδοση <span style="font-size:12px;color:#8fa3c0;font-weight:400;">Περίοδος Α: {period_a_lbl}</span>', unsafe_allow_html=True)
+    shop_cards(grp_A, False)
 
-    st.markdown("#### ⚠️ Bottom 10 — Χαμηλότερη επίδοση")
-    shop_cards(grp_A, "bot10", True, "#22c55e", "#ef4444")
+    st.markdown(f'#### ⚠️ Bottom 10 — Χαμηλότερη επίδοση <span style="font-size:12px;color:#8fa3c0;font-weight:400;">Περίοδος Α: {period_a_lbl}</span>', unsafe_allow_html=True)
+    shop_cards(grp_A, True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
