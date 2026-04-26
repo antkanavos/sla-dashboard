@@ -150,12 +150,105 @@ def load_detail(date_str):
     c, _ = gh_get(f"history/{date_str}.json")
     return json.loads(c) if c else None
 
+# ---------- HELPERS ----------
+@st.cache_data(ttl=3600)
+def load_sla_master():
+    return pd.read_csv(f"{GH_RAW}/master.csv")
+
+@st.cache_data(ttl=3600)
+def load_holidays():
+    hol_df = pd.read_csv(f"{GH_RAW}/holidays.csv")
+    return set(pd.to_datetime(hol_df["date"], dayfirst=True).dt.date)
+
+def clean_addr(x):
+    if pd.isna(x) or str(x).strip() in ("","nan"): return None
+    x = str(x).upper().replace("-"," ").replace(",","").replace(".","")
+    for a,b in [("ΟΔΟΣ",""),("ΑΓΙΟΥ","ΑΓ"),("ΑΓΙΑΣ","ΑΓ"),("ΚΑΙ","&")]:
+        x = x.replace(a,b)
+    return " ".join(x.strip().split())
+
+def clean_pc(x):
+    if pd.isna(x): return None
+    x = "".join(filter(str.isdigit, str(x).replace(".0","").replace(" ","").replace("-","")))
+    return x[:5] if len(x) >= 5 else x
+
+def do_sla_matching(df, master):
+    master = master.copy()
+    master["KEY_CLEAN"]  = master["KEY1"].str.extract(r"(\d+)")
+    master["ADDR_CLEAN"] = master["Full Address"].apply(clean_addr)
+    master["POSTCODE"]   = master["Account : Site : Site PostCode"].apply(clean_pc)
+
+    df = df.reset_index(drop=True).copy()
+    df["SLA_matched"] = None
+    df["RU_matched"]  = None
+
+    # Step 1: KEY + POSTCODE exact
+    m1 = master.sort_values("Χρόνος Παράδοσης").drop_duplicates(["KEY_CLEAN","POSTCODE"], keep="first")
+    merged = df[["KEY_CLEAN","POSTCODE"]].merge(
+        m1[["KEY_CLEAN","POSTCODE","Χρόνος Παράδοσης","Regional Unity"]], on=["KEY_CLEAN","POSTCODE"], how="left"
+    )
+    s1 = merged["Χρόνος Παράδοσης"].notna().values
+    df.loc[s1, "SLA_matched"] = merged.loc[s1, "Χρόνος Παράδοσης"].values
+    df.loc[s1, "RU_matched"]  = merged.loc[s1, "Regional Unity"].values
+
+    # Step 2: fuzzy for multi-SLA keys (within same KEY)
+    multi_keys = set(master.groupby("KEY_CLEAN")["Χρόνος Παράδοσης"].nunique()[lambda x: x>1].index)
+    um2 = df.index[df["SLA_matched"].isna() & df["KEY_CLEAN"].isin(multi_keys)]
+    if len(um2):
+        def fmatch(row):
+            sub = master[master["KEY_CLEAN"]==row["KEY_CLEAN"]]
+            if sub.empty: return None, None
+            m = process.extractOne(row["ADDR_CLEAN"], sub["ADDR_CLEAN"].tolist(), scorer=fuzz.token_sort_ratio)
+            if m and m[1]>=75:
+                hit = sub.iloc[m[2]]
+                return hit["Χρόνος Παράδοσης"], hit.get("Regional Unity")
+            return None, None
+        res = [fmatch(df.loc[i]) for i in um2]
+        df.loc[um2, "SLA_matched"] = [r[0] for r in res]
+        df.loc[um2, "RU_matched"]  = [r[1] for r in res]
+
+    # Step 3: KEY only (single-SLA keys)
+    single_keys = master.groupby("KEY_CLEAN").filter(lambda x: x["Χρόνος Παράδοσης"].nunique()==1)
+    key_sla = single_keys.drop_duplicates("KEY_CLEAN")[["KEY_CLEAN","Χρόνος Παράδοσης","Regional Unity"]]
+    um3 = df.index[df["SLA_matched"].isna()]
+    if len(um3):
+        m3 = df.loc[um3,["KEY_CLEAN"]].merge(key_sla, on="KEY_CLEAN", how="left")
+        m3.index = um3
+        s3 = m3["Χρόνος Παράδοσης"].notna()
+        df.loc[um3[s3], "SLA_matched"] = m3.loc[s3,"Χρόνος Παράδοσης"].values
+        df.loc[um3[s3], "RU_matched"]  = m3.loc[s3,"Regional Unity"].values
+
+    # Step 4: POSTCODE dominant
+    pcm = master.groupby("POSTCODE")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
+    um4 = df.index[df["SLA_matched"].isna()]
+    if len(um4):
+        m4 = df.loc[um4,["POSTCODE"]].merge(pcm, on="POSTCODE", how="left")
+        m4.index = um4
+        s4 = m4["Χρόνος Παράδοσης"].notna()
+        df.loc[um4[s4], "SLA_matched"] = m4.loc[s4,"Χρόνος Παράδοσης"].values
+
+    # Step 5: PC3 prefix
+    master["PC3"] = master["POSTCODE"].str[:3]
+    df["PC3"]     = df["POSTCODE"].str[:3]
+    pc3m = master.groupby("PC3")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
+    um5 = df.index[df["SLA_matched"].isna()]
+    if len(um5):
+        m5 = df.loc[um5,["PC3"]].merge(pc3m, on="PC3", how="left")
+        m5.index = um5
+        s5 = m5["Χρόνος Παράδοσης"].notna()
+        df.loc[um5[s5], "SLA_matched"] = m5.loc[s5,"Χρόνος Παράδοσης"].values
+    df.drop(columns=["PC3"], inplace=True, errors="ignore")
+
+    df["Χρόνος Παράδοσης"] = pd.to_numeric(df["SLA_matched"], errors="coerce")
+    df["Regional Unity"]   = df["RU_matched"]
+    df.drop(columns=["SLA_matched","RU_matched"], inplace=True)
+    return df
+
 # ---------- MASTER TABLE ----------
 MASTER_TABLE_PATH = "history/master_table.csv"
 
 @st.cache_data(ttl=60)
 def load_master_table():
-    """Load the persistent master table from GitHub."""
     from io import StringIO
     c, sha = gh_get(MASTER_TABLE_PATH)
     if c:
@@ -164,70 +257,80 @@ def load_master_table():
 
 def update_master_table(df_new):
     """
-    Merge df_new into master_table with the logic:
-    - Αριθμός ΔΕΝ υπάρχει       → νέα εγγραφή
-    - Υπάρχει + έχει παράδοση  → skip
-    - Υπάρχει + δεν έχει παράδ. + τώρα έχει → overwrite
-    - Υπάρχει + δεν έχει παράδ. + ακόμα δεν έχει → skip
-    Returns (updated_df, n_new, n_updated, changed)
+    Merge df_new into master_table.
+    - Νέα εγγραφή → προσθήκη (χωρίς SLA/Working_Days ακόμα)
+    - Υπάρχει + delivered → skip
+    - Υπάρχει + pending + τώρα delivered → overwrite Ημ_Παράδοσης, καθαρισμός Working_Days
+    - Υπάρχει + pending + ακόμα pending → skip
     """
     existing, sha = load_master_table()
-
-    # Normalize incoming data to str for consistent comparison
     df_new = df_new.copy()
     df_new["Αριθμός"] = df_new["Αριθμός"].astype(str)
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
 
+    new_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
+                "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
+
     if existing.empty:
-        result = df_new[["Αριθμός","Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης_str",
-                          "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης",
-                          "Κωδ. Καταστήματος Παράδοσης","Κατάστημα Παραλαβής"]].copy() \
-            if "Κωδ. Καταστήματος Παράδοσης" in df_new.columns else \
-            df_new[["Αριθμός","Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης_str",
-                    "Κλειδί Πελάτη 3","Δ/νση Παράδοσης","Τ.Κ Παράδοσης"]].copy()
-        if "Κωδ. Καταστήματος Παράδοσης" in df_new.columns:
-            result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ","Κωδ_Καταστήματος","Κατάστημα"]
-        else:
-            result.columns = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ"]
-            result["Κωδ_Καταστήματος"] = ""
-            result["Κατάστημα"] = ""
+        rows = []
+        for _, row in df_new.iterrows():
+            rows.append({
+                "Αριθμός":          str(row["Αριθμός"]),
+                "Ημ_Δημιουργίας":   str(row["Ημ/νία Δημιουργίας"]),
+                "Ημ_Παράδοσης":     str(row["Ημ/νία Παράδοσης_str"]).strip(),
+                "Key":              str(row["Κλειδί Πελάτη 3"]),
+                "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
+                "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
+                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης", "")),
+                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής", "")),
+                "SLA":              "",
+                "Regional_Unity":   "",
+                "Working_Days":     "",
+            })
+        result = pd.DataFrame(rows, columns=new_cols)
         return result, len(result), 0, True, sha
 
     existing["Αριθμός"] = existing["Αριθμός"].astype(str)
-    existing_idx = existing.set_index("Αριθμός")
+    # Ensure new columns exist
+    for col in ["SLA","Regional_Unity","Working_Days"]:
+        if col not in existing.columns:
+            existing[col] = ""
 
-    n_new = 0
-    n_updated = 0
+    existing_idx = existing.set_index("Αριθμός")
+    n_new = 0; n_updated = 0
     rows_to_add = []
 
     for _, row in df_new.iterrows():
-        ar = str(row["Αριθμός"])
+        ar      = str(row["Αριθμός"])
         new_del = str(row["Ημ/νία Παράδοσης_str"]).strip()
 
         if ar not in existing_idx.index:
             rows_to_add.append({
-                "Αριθμός":        ar,
-                "Ημ_Δημιουργίας": str(row["Ημ/νία Δημιουργίας"]),
-                "Ημ_Παράδοσης":   new_del,
-                "Key":            str(row["Κλειδί Πελάτη 3"]),
-                "Διεύθυνση":      str(row["Δ/νση Παράδοσης"]),
-                "ΤΚ":             str(row["Τ.Κ Παράδοσης"]),
+                "Αριθμός":          ar,
+                "Ημ_Δημιουργίας":   str(row["Ημ/νία Δημιουργίας"]),
+                "Ημ_Παράδοσης":     new_del,
+                "Key":              str(row["Κλειδί Πελάτη 3"]),
+                "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
+                "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
                 "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης", "")),
-                "Κατάστημα":      str(row.get("Κατάστημα Παραλαβής", "")),
+                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής", "")),
+                "SLA":              "",
+                "Regional_Unity":   "",
+                "Working_Days":     "",
             })
             n_new += 1
         else:
             existing_del = str(existing_idx.loc[ar, "Ημ_Παράδοσης"]).strip()
             if existing_del and existing_del not in ("nan","","NaT"):
-                # Ήδη delivered → skip
-                pass
+                pass  # already delivered → skip
             elif new_del and new_del not in ("nan","","NaT"):
-                # Pending → τώρα delivered → overwrite
+                # pending → delivered: update date, clear Working_Days (will be recalculated)
                 existing.loc[existing["Αριθμός"]==ar, "Ημ_Παράδοσης"] = new_del
+                existing.loc[existing["Αριθμός"]==ar, "Working_Days"]  = ""
                 n_updated += 1
 
     if rows_to_add:
-        existing = pd.concat([existing, pd.DataFrame(rows_to_add)], ignore_index=True)
+        existing = pd.concat([existing, pd.DataFrame(rows_to_add, columns=new_cols)], ignore_index=True)
 
     changed = (n_new > 0) or (n_updated > 0)
     return existing, n_new, n_updated, changed, sha
@@ -275,186 +378,104 @@ def save_snapshot(snap, force_new_id=False):
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
 
 @st.cache_data(ttl=60)
-def load_master_table_df():
-    """Load master_table.csv from GitHub as the primary data source."""
-    from io import StringIO
-    c, sha = gh_get(MASTER_TABLE_PATH)
-    if c:
-        try:
-            return pd.read_csv(StringIO(c), dtype=str), sha
-        except:
-            return pd.DataFrame(), None
-    return pd.DataFrame(), None
-
-@st.cache_data(ttl=3600)
-def load_sla_master():
-    """Load master.csv (SLA mapping) — changes rarely."""
-    return pd.read_csv(f"{GH_RAW}/master.csv")
-
-@st.cache_data(ttl=3600)
-def load_holidays():
-    hol_df = pd.read_csv(f"{GH_RAW}/holidays.csv")
-    return set(pd.to_datetime(hol_df["date"], dayfirst=True).dt.date)
-
-def clean_addr(x):
-    if pd.isna(x) or str(x).strip() in ("","nan"): return None
-    x = str(x).upper().replace("-"," ").replace(",","").replace(".","")
-    for a,b in [("ΟΔΟΣ",""),("ΑΓΙΟΥ","ΑΓ"),("ΑΓΙΑΣ","ΑΓ"),("ΚΑΙ","&")]:
-        x = x.replace(a,b)
-    return " ".join(x.strip().split())
-
-def clean_pc(x):
-    if pd.isna(x): return None
-    x = "".join(filter(str.isdigit, str(x).replace(".0","").replace(" ","").replace("-","")))
-    return x[:5] if len(x) >= 5 else x
-
-def do_sla_matching(df, master):
-    """
-    Full SLA matching pipeline:
-    1. KEY + POSTCODE (exact)
-    2. KEY + fuzzy address (within same KEY only, for multi-SLA keys)
-    3. KEY only (if single SLA for that key)
-    4. POSTCODE dominant
-    5. PC3 prefix
-    """
-    master = master.copy()
-    master["KEY_CLEAN"]  = master["KEY1"].str.extract(r"(\d+)")
-    master["ADDR_CLEAN"] = master["Full Address"].apply(clean_addr)
-    master["POSTCODE"]   = master["Account : Site : Site PostCode"].apply(clean_pc)
-
-    df = df.reset_index(drop=True).copy()
-    df["SLA_matched"] = None
-    df["RU_matched"]  = None
-
-    # Step 1: KEY + POSTCODE exact
-    m1 = master.sort_values("Χρόνος Παράδοσης").drop_duplicates(["KEY_CLEAN","POSTCODE"], keep="first")
-    merged = df[["KEY_CLEAN","POSTCODE"]].merge(
-        m1[["KEY_CLEAN","POSTCODE","Χρόνος Παράδοσης","Regional Unity"]],
-        on=["KEY_CLEAN","POSTCODE"], how="left"
-    )
-    s1_mask = merged["Χρόνος Παράδοσης"].notna().values
-    df.loc[s1_mask, "SLA_matched"] = merged.loc[s1_mask, "Χρόνος Παράδοσης"].values
-    df.loc[s1_mask, "RU_matched"]  = merged.loc[s1_mask, "Regional Unity"].values
-
-    # Step 2: fuzzy address for multi-SLA keys (within same KEY)
-    multi_sla_keys = set(master.groupby("KEY_CLEAN")["Χρόνος Παράδοσης"].nunique()[lambda x: x>1].index)
-    um_idx = df.index[df["SLA_matched"].isna() & df["KEY_CLEAN"].isin(multi_sla_keys)]
-    if len(um_idx):
-        def fmatch(row):
-            sub = master[master["KEY_CLEAN"]==row["KEY_CLEAN"]]
-            if sub.empty: return None, None
-            choices = sub["ADDR_CLEAN"].tolist()
-            m = process.extractOne(row["ADDR_CLEAN"], choices, scorer=fuzz.token_sort_ratio)
-            if m and m[1] >= 75:
-                hit = sub.iloc[m[2]]
-                return hit["Χρόνος Παράδοσης"], hit.get("Regional Unity", None)
-            return None, None
-        results = [fmatch(df.loc[i]) for i in um_idx]
-        df.loc[um_idx, "SLA_matched"] = [r[0] for r in results]
-        df.loc[um_idx, "RU_matched"]  = [r[1] for r in results]
-
-    # Step 3: KEY only (single-SLA keys)
-    single_keys = master.groupby("KEY_CLEAN").filter(lambda x: x["Χρόνος Παράδοσης"].nunique()==1)
-    key_sla = single_keys.drop_duplicates("KEY_CLEAN")[["KEY_CLEAN","Χρόνος Παράδοσης","Regional Unity"]]
-    um_idx3 = df.index[df["SLA_matched"].isna()]
-    if len(um_idx3):
-        merged3 = df.loc[um_idx3, ["KEY_CLEAN"]].merge(key_sla, on="KEY_CLEAN", how="left")
-        merged3.index = um_idx3
-        s3 = merged3["Χρόνος Παράδοσης"].notna()
-        df.loc[um_idx3[s3], "SLA_matched"] = merged3.loc[s3, "Χρόνος Παράδοσης"].values
-        df.loc[um_idx3[s3], "RU_matched"]  = merged3.loc[s3, "Regional Unity"].values
-
-    # Step 4: POSTCODE dominant
-    pcm = master.groupby("POSTCODE")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
-    um_idx4 = df.index[df["SLA_matched"].isna()]
-    if len(um_idx4):
-        merged4 = df.loc[um_idx4, ["POSTCODE"]].merge(pcm, on="POSTCODE", how="left")
-        merged4.index = um_idx4
-        s4 = merged4["Χρόνος Παράδοσης"].notna()
-        df.loc[um_idx4[s4], "SLA_matched"] = merged4.loc[s4, "Χρόνος Παράδοσης"].values
-
-    # Step 5: PC3 prefix
-    master["PC3"] = master["POSTCODE"].str[:3]
-    df["PC3"]     = df["POSTCODE"].str[:3]
-    pc3m = master.groupby("PC3")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
-    um_idx5 = df.index[df["SLA_matched"].isna()]
-    if len(um_idx5):
-        merged5 = df.loc[um_idx5, ["PC3"]].merge(pc3m, on="PC3", how="left")
-        merged5.index = um_idx5
-        s5 = merged5["Χρόνος Παράδοσης"].notna()
-        df.loc[um_idx5[s5], "SLA_matched"] = merged5.loc[s5, "Χρόνος Παράδοσης"].values
-    df.drop(columns=["PC3"], inplace=True, errors="ignore")
-
-    df["Χρόνος Παράδοσης"] = pd.to_numeric(df["SLA_matched"], errors="coerce")
-    df["Regional Unity"]   = df["RU_matched"]
-    df.drop(columns=["SLA_matched","RU_matched"], inplace=True)
-    return df
-
-@st.cache_data(ttl=60)
 def load_and_process():
     """
-    Primary data source: master_table.csv (cumulative, all shipments ever).
-    data.csv is only used to update master_table.
-    SLA matching is done here on the full master_table.
+    Primary source: master_table.csv
+    - Rows with SLA + Working_Days already set → load directly (no reprocessing)
+    - Rows missing SLA → run matching
+    - Delivered rows missing Working_Days → calculate and cache
+    - All results saved back to master_table
     """
     from io import StringIO
+    import numpy as np
 
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    # Load master_table as primary source
-    mt_content, _ = gh_get(MASTER_TABLE_PATH)
+    mt_content, mt_sha = gh_get(MASTER_TABLE_PATH)
     if not mt_content:
-        # Fallback to data.csv if master_table empty
-        df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
+        return pd.DataFrame()
+
+    mt = pd.read_csv(StringIO(mt_content), dtype=str)
+
+    # Ensure all columns exist
+    for col in ["SLA","Regional_Unity","Working_Days"]:
+        if col not in mt.columns:
+            mt[col] = ""
+
+    # Rename to working column names
+    col_map = {
+        "Ημ_Δημιουργίας": "Ημ/νία Δημιουργίας",
+        "Ημ_Παράδοσης":   "Ημ/νία Παράδοσης",
+        "Key":            "Κλειδί Πελάτη 3",
+        "Διεύθυνση":      "Δ/νση Παράδοσης",
+        "ΤΚ":             "Τ.Κ Παράδοσης",
+        "Κωδ_Καταστήματος": "Κωδ. Καταστήματος Παράδοσης",
+        "Κατάστημα":      "Κατάστημα Παραλαβής",
+    }
+    df = mt.rename(columns=col_map)
+
+    # KEY_CLEAN
+    df["KEY_CLEAN"] = df["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
+    df = df[df["KEY_CLEAN"].notna()].reset_index(drop=True)
+
+    # Κατάστημα combined
+    if "Κωδ. Καταστήματος Παράδοσης" in df.columns:
+        df["Κατάστημα"] = (
+            df["Κωδ. Καταστήματος Παράδοσης"].astype(str).str.strip() + " " +
+            df["Κατάστημα Παραλαβής"].astype(str).str.strip()
+        ).str.strip().replace({"nan nan":"—","nan":"—"})
     else:
-        df_raw = pd.read_csv(StringIO(mt_content), dtype=str)
-        # Rename master_table columns back to original names
-        col_map = {
-            "Αριθμός":        "Αριθμός",
-            "Ημ_Δημιουργίας": "Ημ/νία Δημιουργίας",
-            "Ημ_Παράδοσης":   "Ημ/νία Παράδοσης",
-            "Key":            "Κλειδί Πελάτη 3",
-            "Διεύθυνση":      "Δ/νση Παράδοσης",
-            "ΤΚ":             "Τ.Κ Παράδοσης",
-            "Κωδ_Καταστήματος": "Κωδ. Καταστήματος Παράδοσης",
-            "Κατάστημα":      "Κατάστημα Παραλαβής",
-        }
-        df_raw = df_raw.rename(columns={k:v for k,v in col_map.items() if k in df_raw.columns})
+        df["Κατάστημα"] = "—"
 
-    # Clean keys
-    df_raw["KEY_CLEAN"] = df_raw["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
-    df_raw = df_raw[df_raw["KEY_CLEAN"].notna()].copy()
+    df["ADDR_CLEAN"] = df["Δ/νση Παράδοσης"].apply(clean_addr)
+    df["POSTCODE"]   = df["Τ.Κ Παράδοσης"].apply(clean_pc)
 
-    # Κατάστημα
-    if "Κωδ. Καταστήματος Παράδοσης" in df_raw.columns and "Κατάστημα Παραλαβής" in df_raw.columns:
-        df_raw["Κατάστημα"] = (
-            df_raw["Κωδ. Καταστήματος Παράδοσης"].astype(str).str.strip() + " " +
-            df_raw["Κατάστημα Παραλαβής"].astype(str).str.strip()
-        ).str.strip().replace("nan nan","—").replace("nan","—")
-    else:
-        df_raw["Κατάστημα"] = "—"
+    # ── SLA matching only for rows without SLA ──
+    needs_sla = df["SLA"].isna() | (df["SLA"].astype(str).str.strip().isin(["","nan"]))
+    needs_sla_count = needs_sla.sum()
 
-    df_raw["ADDR_CLEAN"] = df_raw["Δ/νση Παράδοσης"].apply(clean_addr)
-    df_raw["POSTCODE"]   = df_raw["Τ.Κ Παράδοσης"].apply(clean_pc)
+    if needs_sla_count > 0:
+        df_to_match = df[needs_sla].copy().reset_index(drop=True)
+        df_to_match["orig_idx"] = df[needs_sla].index.tolist()
+        matched = do_sla_matching(df_to_match, master_sla)
+        for i, orig_i in enumerate(df_to_match["orig_idx"]):
+            df.at[orig_i, "SLA"]           = str(matched.at[i, "Χρόνος Παράδοσης"]) if pd.notna(matched.at[i, "Χρόνος Παράδοσης"]) else ""
+            df.at[orig_i, "Regional_Unity"] = str(matched.at[i, "Regional Unity"])   if pd.notna(matched.at[i, "Regional Unity"])   else ""
 
-    # SLA matching
-    df_raw = do_sla_matching(df_raw, master_sla)
+    # ── Parse dates ──
+    df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True, errors="coerce")
+    df["Ημ/νία Παράδοσης"]   = pd.to_datetime(df["Ημ/νία Παράδοσης"],   dayfirst=True, errors="coerce")
+    df["Χρόνος Παράδοσης"]   = pd.to_numeric(df["SLA"], errors="coerce")
+    df["Regional Unity"]      = df["Regional_Unity"].replace({"nan":"", "":None})
+    df["sla_days"]            = df["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
 
-    # Dates
-    df_raw["Ημ/νία Δημιουργίας"] = pd.to_datetime(df_raw["Ημ/νία Δημιουργίας"], dayfirst=True, errors="coerce")
-    df_raw["Ημ/νία Παράδοσης"]   = pd.to_datetime(df_raw["Ημ/νία Παράδοσης"],   dayfirst=True, errors="coerce")
-    df_raw["sla_days"] = df_raw["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
+    # ── Working days — only for delivered rows without cached value ──
+    delivered_mask = df["Ημ/νία Παράδοσης"].notna()
+    needs_wd = delivered_mask & (df["Working_Days"].isna() | df["Working_Days"].astype(str).str.strip().isin(["","nan"]))
 
-    def wdays(start, end):
-        if pd.isna(end) or pd.isna(start): return None
-        days = pd.date_range(start, end)
-        return len([d for d in days if d.weekday()!=6 and d.date() not in holidays]) - 1
+    if needs_wd.sum() > 0:
+        def wdays(start, end):
+            if pd.isna(end) or pd.isna(start): return None
+            days = pd.date_range(start, end)
+            return len([d for d in days if d.weekday()!=6 and d.date() not in holidays]) - 1
+        wd_vals = df[needs_wd].apply(lambda x: wdays(x["Ημ/νία Δημιουργίας"], x["Ημ/νία Παράδοσης"]), axis=1)
+        df.loc[needs_wd, "Working_Days"] = wd_vals.astype(str)
 
-    df_raw["working_days"] = df_raw.apply(
-        lambda x: wdays(x["Ημ/νία Δημιουργίας"], x["Ημ/νία Παράδοσης"]), axis=1
-    )
-    return df_raw
+    df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
+
+    # ── Save back to master_table if anything changed ──
+    if needs_sla_count > 0 or needs_wd.sum() > 0:
+        mt_save = df.rename(columns={v:k for k,v in col_map.items()})
+        save_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
+                     "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
+        mt_save = mt_save[[c for c in save_cols if c in mt_save.columns]]
+        csv_str = mt_save.to_csv(index=False)
+        _, current_sha = gh_get(MASTER_TABLE_PATH)
+        gh_put(MASTER_TABLE_PATH, csv_str, "cache: SLA+working_days", current_sha or mt_sha)
+        load_master_table.clear()
+
+    return df
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
