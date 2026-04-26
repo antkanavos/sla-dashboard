@@ -38,13 +38,26 @@ html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     display: block; margin-bottom: 2px;
 }
 [data-testid="stSidebar"] [data-testid="stRadio"] label:hover { color: white !important; background: rgba(255,255,255,0.06); }
-[data-testid="stSidebar"] [data-testid="stRadio"] [aria-checked="true"] + label,
-[data-testid="stSidebar"] [data-testid="stRadio"] label[data-checked="true"] { color: white !important; background: rgba(255,255,255,0.1); }
 [data-testid="stSidebarCollapseButton"] { display: flex !important; visibility: visible !important; }
+
+/* When sidebar is collapsed — hide the gap entirely */
+[data-testid="stSidebar"][aria-expanded="false"] {
+    min-width: 0 !important;
+    width: 0 !important;
+}
+/* Collapsed control button — stays visible on the edge */
 button[data-testid="collapsedControl"] {
-    display: flex !important; visibility: visible !important;
-    background: #1a2235 !important; border-radius: 0 8px 8px 0 !important;
-    border: 1px solid #2a3550 !important; border-left: none !important;
+    display: flex !important;
+    visibility: visible !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 50% !important;
+    z-index: 999 !important;
+    background: #1a2235 !important;
+    border-radius: 0 8px 8px 0 !important;
+    border: 1px solid #2a3550 !important;
+    border-left: none !important;
+    padding: 12px 6px !important;
 }
 
 .kpi-card { background: white; border-radius: 16px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f2f5; }
