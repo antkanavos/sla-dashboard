@@ -338,7 +338,6 @@ def update_master_table(df_new):
 def save_master_table(df_master, sha):
     """Save master table CSV to GitHub."""
     load_master_table.clear()
-    load_and_process.clear()
     csv_str = df_master.to_csv(index=False)
     _, current_sha = gh_get(MASTER_TABLE_PATH)
     effective_sha = current_sha or sha
