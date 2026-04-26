@@ -309,22 +309,24 @@ def do_sla_matching(df, master):
     master["ADDR_CLEAN"] = master["Full Address"].apply(clean_addr)
     master["POSTCODE"]   = master["Account : Site : Site PostCode"].apply(clean_pc)
 
-    df = df.copy()
+    df = df.reset_index(drop=True).copy()
     df["SLA_matched"] = None
-    df["Regional Unity_matched"] = None
+    df["RU_matched"]  = None
 
     # Step 1: KEY + POSTCODE exact
     m1 = master.sort_values("Χρόνος Παράδοσης").drop_duplicates(["KEY_CLEAN","POSTCODE"], keep="first")
-    merged = df.merge(m1[["KEY_CLEAN","POSTCODE","Χρόνος Παράδοσης","Regional Unity"]],
-                      on=["KEY_CLEAN","POSTCODE"], how="left")
-    s1_mask = merged["Χρόνος Παράδοσης"].notna()
+    merged = df[["KEY_CLEAN","POSTCODE"]].merge(
+        m1[["KEY_CLEAN","POSTCODE","Χρόνος Παράδοσης","Regional Unity"]],
+        on=["KEY_CLEAN","POSTCODE"], how="left"
+    )
+    s1_mask = merged["Χρόνος Παράδοσης"].notna().values
     df.loc[s1_mask, "SLA_matched"] = merged.loc[s1_mask, "Χρόνος Παράδοσης"].values
-    df.loc[s1_mask, "Regional Unity_matched"] = merged.loc[s1_mask, "Regional Unity"].values
+    df.loc[s1_mask, "RU_matched"]  = merged.loc[s1_mask, "Regional Unity"].values
 
-    # Step 2: KEY + fuzzy address (only for multi-SLA keys, within same KEY)
+    # Step 2: fuzzy address for multi-SLA keys (within same KEY)
     multi_sla_keys = set(master.groupby("KEY_CLEAN")["Χρόνος Παράδοσης"].nunique()[lambda x: x>1].index)
-    unmatched = df[df["SLA_matched"].isna() & df["KEY_CLEAN"].isin(multi_sla_keys)].copy()
-    if len(unmatched):
+    um_idx = df.index[df["SLA_matched"].isna() & df["KEY_CLEAN"].isin(multi_sla_keys)]
+    if len(um_idx):
         def fmatch(row):
             sub = master[master["KEY_CLEAN"]==row["KEY_CLEAN"]]
             if sub.empty: return None, None
@@ -334,45 +336,45 @@ def do_sla_matching(df, master):
                 hit = sub.iloc[m[2]]
                 return hit["Χρόνος Παράδοσης"], hit.get("Regional Unity", None)
             return None, None
-        results = unmatched.apply(fmatch, axis=1)
-        sla_vals = pd.to_numeric([r[0] for r in results], errors="coerce")
-        reg_vals = [r[1] for r in results]
-        df.loc[unmatched.index, "SLA_matched"] = sla_vals.values
-        df.loc[unmatched.index, "Regional Unity_matched"] = reg_vals
+        results = [fmatch(df.loc[i]) for i in um_idx]
+        df.loc[um_idx, "SLA_matched"] = [r[0] for r in results]
+        df.loc[um_idx, "RU_matched"]  = [r[1] for r in results]
 
     # Step 3: KEY only (single-SLA keys)
-    unmatched = df[df["SLA_matched"].isna()].copy()
-    single_sla = master.groupby("KEY_CLEAN").filter(lambda x: x["Χρόνος Παράδοσης"].nunique()==1)
-    key_sla = single_sla.drop_duplicates("KEY_CLEAN")[["KEY_CLEAN","Χρόνος Παράδοσης","Regional Unity"]]
-    fb3 = unmatched[["KEY_CLEAN"]].merge(key_sla, on="KEY_CLEAN", how="left")
-    fb3.index = unmatched.index
-    s3_mask = fb3["Χρόνος Παράδοσης"].notna()
-    df.loc[unmatched.index[s3_mask], "SLA_matched"] = fb3.loc[s3_mask, "Χρόνος Παράδοσης"].values
-    df.loc[unmatched.index[s3_mask], "Regional Unity_matched"] = fb3.loc[s3_mask, "Regional Unity"].values
+    single_keys = master.groupby("KEY_CLEAN").filter(lambda x: x["Χρόνος Παράδοσης"].nunique()==1)
+    key_sla = single_keys.drop_duplicates("KEY_CLEAN")[["KEY_CLEAN","Χρόνος Παράδοσης","Regional Unity"]]
+    um_idx3 = df.index[df["SLA_matched"].isna()]
+    if len(um_idx3):
+        merged3 = df.loc[um_idx3, ["KEY_CLEAN"]].merge(key_sla, on="KEY_CLEAN", how="left")
+        merged3.index = um_idx3
+        s3 = merged3["Χρόνος Παράδοσης"].notna()
+        df.loc[um_idx3[s3], "SLA_matched"] = merged3.loc[s3, "Χρόνος Παράδοσης"].values
+        df.loc[um_idx3[s3], "RU_matched"]  = merged3.loc[s3, "Regional Unity"].values
 
     # Step 4: POSTCODE dominant
     pcm = master.groupby("POSTCODE")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
-    pcm.columns = ["POSTCODE","SLA_pc"]
-    unmatched = df[df["SLA_matched"].isna()].copy()
-    fb4 = unmatched[["POSTCODE"]].merge(pcm, on="POSTCODE", how="left")
-    fb4.index = unmatched.index
-    s4_mask = fb4["SLA_pc"].notna()
-    df.loc[unmatched.index[s4_mask], "SLA_matched"] = fb4.loc[s4_mask, "SLA_pc"].values
+    um_idx4 = df.index[df["SLA_matched"].isna()]
+    if len(um_idx4):
+        merged4 = df.loc[um_idx4, ["POSTCODE"]].merge(pcm, on="POSTCODE", how="left")
+        merged4.index = um_idx4
+        s4 = merged4["Χρόνος Παράδοσης"].notna()
+        df.loc[um_idx4[s4], "SLA_matched"] = merged4.loc[s4, "Χρόνος Παράδοσης"].values
 
     # Step 5: PC3 prefix
     master["PC3"] = master["POSTCODE"].str[:3]
+    df["PC3"]     = df["POSTCODE"].str[:3]
     pc3m = master.groupby("PC3")["Χρόνος Παράδοσης"].agg(lambda x: x.mode()[0]).reset_index()
-    pc3m.columns = ["PC3","SLA_pc3"]
-    unmatched = df[df["SLA_matched"].isna()].copy()
-    unmatched["PC3"] = unmatched["POSTCODE"].str[:3]
-    fb5 = unmatched[["PC3"]].merge(pc3m, on="PC3", how="left")
-    fb5.index = unmatched.index
-    s5_mask = fb5["SLA_pc3"].notna()
-    df.loc[unmatched.index[s5_mask], "SLA_matched"] = fb5.loc[s5_mask, "SLA_pc3"].values
+    um_idx5 = df.index[df["SLA_matched"].isna()]
+    if len(um_idx5):
+        merged5 = df.loc[um_idx5, ["PC3"]].merge(pc3m, on="PC3", how="left")
+        merged5.index = um_idx5
+        s5 = merged5["Χρόνος Παράδοσης"].notna()
+        df.loc[um_idx5[s5], "SLA_matched"] = merged5.loc[s5, "Χρόνος Παράδοσης"].values
+    df.drop(columns=["PC3"], inplace=True, errors="ignore")
 
     df["Χρόνος Παράδοσης"] = pd.to_numeric(df["SLA_matched"], errors="coerce")
-    df["Regional Unity"]   = df["Regional Unity_matched"]
-    df.drop(columns=["SLA_matched","Regional Unity_matched"], inplace=True)
+    df["Regional Unity"]   = df["RU_matched"]
+    df.drop(columns=["SLA_matched","RU_matched"], inplace=True)
     return df
 
 @st.cache_data(ttl=60)
