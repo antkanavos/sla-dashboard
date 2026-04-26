@@ -519,20 +519,6 @@ def load_and_process():
         df.loc[needs_wd, "Working_Days"] = [str(r) if r is not None else "" for r in results]
 
     df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
-
-    # ── Save SLA + Working_Days back to master_table immediately ──
-    needs_save = (needs_sla_count > 0) or (needs_wd.sum() > 0)
-    if needs_save:
-        col_map_rev = {v:k for k,v in col_map.items()}
-        mt_save = df.rename(columns=col_map_rev)
-        save_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
-                     "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
-        mt_save = mt_save[[c for c in save_cols if c in mt_save.columns]]
-        _, current_sha = gh_get(MASTER_TABLE_PATH)
-        gh_put(MASTER_TABLE_PATH, mt_save.to_csv(index=False),
-               "cache: SLA+working_days", current_sha or mt_sha)
-
-    _DF_FULL = df
     return df
 
 with st.spinner("Φόρτωση δεδομένων..."):
