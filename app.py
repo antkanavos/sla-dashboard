@@ -389,9 +389,8 @@ def load_and_process():
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    # Read master_table directly via raw URL with cache-busting
     import time
-    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}?t={int(time.time())}"
+    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
     mt_sha = None
     mt = None
     try:
