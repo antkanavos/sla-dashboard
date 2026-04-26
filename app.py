@@ -537,7 +537,11 @@ def load_and_process():
     return df
 
 with st.spinner("Φόρτωση δεδομένων..."):
-    df_full = load_and_process()
+    if "df_full" not in st.session_state or st.session_state.get("_force_reload", False):
+        st.session_state["df_full"] = load_and_process()
+        st.session_state.pop("_force_reload", None)
+
+df_full = st.session_state["df_full"]
 
 # Save SLA/working_days back to master_table if needed (outside cache, once only)
 if "_pending_mt_save" in st.session_state and st.session_state["_pending_mt_save"]:
@@ -551,6 +555,7 @@ if "_pending_mt_save" in st.session_state and st.session_state["_pending_mt_save
         st.session_state["_mt_save_done"] = True
         st.session_state.pop("_pending_mt_save", None)
         st.session_state.pop("_pending_mt_sha", None)
+        st.session_state["_force_reload"] = True
         st.rerun()
     else:
         st.session_state.pop("_mt_save_done", None)
