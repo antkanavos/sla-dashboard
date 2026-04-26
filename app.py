@@ -337,9 +337,8 @@ def update_master_table(df_new):
 
 def save_master_table(df_master, sha):
     """Save master table CSV to GitHub."""
-    global _DF_FULL
-    _DF_FULL = None  # Reset singleton so next load picks up new data
     load_master_table.clear()
+    load_and_process.clear()
     csv_str = df_master.to_csv(index=False)
     _, current_sha = gh_get(MASTER_TABLE_PATH)
     effective_sha = current_sha or sha
@@ -378,13 +377,26 @@ def save_snapshot(snap, force_new_id=False):
 # ---------- DATA LOADING ----------
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
 
-# Module-level singleton — loaded once per server process, never reloaded on rerun
+# Module-level singleton
 _DF_FULL = None
+_DF_HASH = None
 
+@st.cache_resource
+def _get_df_cache_key():
+    """Get hash of master_table to use as cache key."""
+    try:
+        import urllib.request
+        url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
+        # Just get first 500 bytes to check if content changed
+        req = urllib.request.Request(url)
+        req.add_header("Range", "bytes=0-499")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return hashlib.md5(r.read()).hexdigest()
+    except:
+        return "default"
+
+@st.cache_resource(hash_funcs={})
 def load_and_process():
-    global _DF_FULL
-    if _DF_FULL is not None:
-        return _DF_FULL
 
     from io import StringIO
     import numpy as np
@@ -521,11 +533,35 @@ def load_and_process():
         df.loc[needs_wd, "Working_Days"] = [str(r) if r is not None else "" for r in results]
 
     df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
+
+    # ── Save SLA + Working_Days back to master_table immediately ──
+    needs_save = (needs_sla_count > 0) or (needs_wd.sum() > 0)
+    if needs_save:
+        col_map_rev = {v:k for k,v in col_map.items()}
+        mt_save = df.rename(columns=col_map_rev)
+        save_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
+                     "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
+        mt_save = mt_save[[c for c in save_cols if c in mt_save.columns]]
+        _, current_sha = gh_get(MASTER_TABLE_PATH)
+        gh_put(MASTER_TABLE_PATH, mt_save.to_csv(index=False),
+               "cache: SLA+working_days", current_sha or mt_sha)
+
     _DF_FULL = df
-    return _DF_FULL
+    return df
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
+
+# If master_table was just updated, rerun once to pick up cached data
+if "df_full" not in st.session_state:
+    st.session_state["df_full"] = True
+    if df_full is not None and len(df_full) > 0:
+        needs_recalc = (
+            df_full["Working_Days"].isna() |
+            df_full["Working_Days"].astype(str).str.strip().isin(["","nan"])
+        ).any() if "Working_Days" in df_full.columns else False
+        if needs_recalc:
+            st.rerun()
 
 # ---------- METRICS ----------
 def metrics(df):
