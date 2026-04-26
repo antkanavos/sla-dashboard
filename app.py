@@ -377,7 +377,7 @@ def save_snapshot(snap, force_new_id=False):
 # ---------- DATA LOADING ----------
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=1800)  # 30 minutes — refreshes only when needed via clear()
 def load_and_process():
     """
     Primary source: master_table.csv
@@ -509,15 +509,21 @@ def load_and_process():
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
 
-# Save SLA/working_days back to master_table if needed (outside cache)
+# Save SLA/working_days back to master_table if needed (outside cache, once only)
 if "_pending_mt_save" in st.session_state and st.session_state["_pending_mt_save"]:
-    csv_str = st.session_state.pop("_pending_mt_save")
-    sha     = st.session_state.pop("_pending_mt_sha", None)
-    _, current_sha = gh_get(MASTER_TABLE_PATH)
-    gh_put(MASTER_TABLE_PATH, csv_str, "cache: SLA+working_days", current_sha or sha)
-    load_master_table.clear()
-    load_and_process.clear()
-    st.rerun()
+    if not st.session_state.get("_mt_save_done", False):
+        csv_str = st.session_state["_pending_mt_save"]
+        sha     = st.session_state.get("_pending_mt_sha")
+        _, current_sha = gh_get(MASTER_TABLE_PATH)
+        gh_put(MASTER_TABLE_PATH, csv_str, "cache: SLA+working_days", current_sha or sha)
+        load_master_table.clear()
+        load_and_process.clear()
+        st.session_state["_mt_save_done"] = True
+        st.session_state.pop("_pending_mt_save", None)
+        st.session_state.pop("_pending_mt_sha", None)
+        st.rerun()
+    else:
+        st.session_state.pop("_mt_save_done", None)
 
 # ---------- METRICS ----------
 def metrics(df):
