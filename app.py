@@ -381,6 +381,7 @@ _DF_FULL = None
 _DF_HASH = None
 
 @st.cache_resource
+@st.cache_resource
 def load_and_process():
     from io import StringIO
     import numpy as np
