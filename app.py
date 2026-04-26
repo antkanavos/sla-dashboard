@@ -392,15 +392,14 @@ def load_and_process():
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    mt_content, mt_sha = gh_get(MASTER_TABLE_PATH)
-
-    # Use data.csv directly if master_table is missing or empty (only headers)
+    # Read master_table directly via raw URL (faster, cacheable, no API auth overhead)
+    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
+    mt_sha = None
     mt = None
-    if mt_content:
-        try:
-            mt = pd.read_csv(StringIO(mt_content), dtype=str)
-        except:
-            mt = None
+    try:
+        mt = pd.read_csv(mt_url, dtype=str)
+    except:
+        mt = None
 
     if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
@@ -522,43 +521,10 @@ def load_and_process():
         df.loc[needs_wd, "Working_Days"] = [str(r) if r is not None else "" for r in results]
 
     df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
-
-    # Return also what needs saving (will be done outside cache)
-    needs_save = (needs_sla_count > 0) or (needs_wd.sum() > 0)
-    if needs_save:
-        # Store pending save info in session state — actual save happens outside
-        col_map_rev = {v:k for k,v in col_map.items()}
-        mt_save = df.rename(columns=col_map_rev)
-        save_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
-                     "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
-        st.session_state["_pending_mt_save"] = mt_save[[c for c in save_cols if c in mt_save.columns]].to_csv(index=False)
-        st.session_state["_pending_mt_sha"]  = mt_sha
-
     return df
 
 with st.spinner("Φόρτωση δεδομένων..."):
-    if "df_full" not in st.session_state or st.session_state.get("_force_reload", False):
-        st.session_state["df_full"] = load_and_process()
-        st.session_state.pop("_force_reload", None)
-
-df_full = st.session_state["df_full"]
-
-# Save SLA/working_days back to master_table if needed (outside cache, once only)
-if "_pending_mt_save" in st.session_state and st.session_state["_pending_mt_save"]:
-    if not st.session_state.get("_mt_save_done", False):
-        csv_str = st.session_state["_pending_mt_save"]
-        sha     = st.session_state.get("_pending_mt_sha")
-        _, current_sha = gh_get(MASTER_TABLE_PATH)
-        gh_put(MASTER_TABLE_PATH, csv_str, "cache: SLA+working_days", current_sha or sha)
-        load_master_table.clear()
-        load_and_process.clear()
-        st.session_state["_mt_save_done"] = True
-        st.session_state.pop("_pending_mt_save", None)
-        st.session_state.pop("_pending_mt_sha", None)
-        st.session_state["_force_reload"] = True
-        st.rerun()
-    else:
-        st.session_state.pop("_mt_save_done", None)
+    df_full = load_and_process()
 
 # ---------- METRICS ----------
 def metrics(df):
