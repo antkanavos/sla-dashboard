@@ -377,7 +377,7 @@ def save_snapshot(snap, force_new_id=False):
 # ---------- DATA LOADING ----------
 GH_RAW = f"https://raw.githubusercontent.com/{GH_REPO}/refs/heads/{GH_BRANCH}"
 
-@st.cache_data(ttl=1800)  # 30 minutes — refreshes only when needed via clear()
+@st.cache_resource
 def load_and_process():
     """
     Primary source: master_table.csv
