@@ -382,30 +382,16 @@ _DF_FULL = None
 _DF_HASH = None
 
 @st.cache_resource
-def _get_df_cache_key():
-    """Get hash of master_table to use as cache key."""
-    try:
-        import urllib.request
-        url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
-        # Just get first 500 bytes to check if content changed
-        req = urllib.request.Request(url)
-        req.add_header("Range", "bytes=0-499")
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return hashlib.md5(r.read()).hexdigest()
-    except:
-        return "default"
-
-@st.cache_resource(hash_funcs={})
 def load_and_process():
-
     from io import StringIO
     import numpy as np
 
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    # Read master_table directly via raw URL (faster, cacheable, no API auth overhead)
-    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
+    # Read master_table directly via raw URL with cache-busting
+    import time
+    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}?t={int(time.time())}"
     mt_sha = None
     mt = None
     try:
@@ -551,17 +537,6 @@ def load_and_process():
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
-
-# If master_table was just updated, rerun once to pick up cached data
-if "df_full" not in st.session_state:
-    st.session_state["df_full"] = True
-    if df_full is not None and len(df_full) > 0:
-        needs_recalc = (
-            df_full["Working_Days"].isna() |
-            df_full["Working_Days"].astype(str).str.strip().isin(["","nan"])
-        ).any() if "Working_Days" in df_full.columns else False
-        if needs_recalc:
-            st.rerun()
 
 # ---------- METRICS ----------
 def metrics(df):
