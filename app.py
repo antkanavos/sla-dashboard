@@ -477,19 +477,49 @@ def load_and_process():
     df["Ημ/νία Παράδοσης"]   = pd.to_datetime(df["Ημ/νία Παράδοσης"],   dayfirst=True, errors="coerce")
     df["Χρόνος Παράδοσης"]   = pd.to_numeric(df["SLA"], errors="coerce")
     df["Regional Unity"]      = df["Regional_Unity"].replace({"nan":"", "":None})
-    df["sla_days"]            = df["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
+    df["sla_days"] = df["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
 
-    # ── Working days — only for delivered rows without cached value ──
+    # ── Working days — vectorized, only for delivered rows without cached value ──
     delivered_mask = df["Ημ/νία Παράδοσης"].notna()
     needs_wd = delivered_mask & (df["Working_Days"].isna() | df["Working_Days"].astype(str).str.strip().isin(["","nan"]))
 
     if needs_wd.sum() > 0:
-        def wdays(start, end):
-            if pd.isna(end) or pd.isna(start): return None
-            days = pd.date_range(start, end)
-            return len([d for d in days if d.weekday()!=6 and d.date() not in holidays]) - 1
-        wd_vals = df[needs_wd].apply(lambda x: wdays(x["Ημ/νία Δημιουργίας"], x["Ημ/νία Παράδοσης"]), axis=1)
-        df.loc[needs_wd, "Working_Days"] = wd_vals.astype(str)
+        import numpy as np
+
+        sub = df[needs_wd][["Ημ/νία Δημιουργίας","Ημ/νία Παράδοσης"]].copy()
+
+        # Build set of holiday ordinals for fast lookup
+        holiday_ordinals = set(
+            pd.Timestamp(h).toordinal() for h in holidays
+        )
+
+        # For each row, count days between start and end excluding Sundays and holidays
+        starts = sub["Ημ/νία Δημιουργίας"].values.astype("datetime64[D]")
+        ends   = sub["Ημ/νία Παράδοσης"].values.astype("datetime64[D]")
+
+        results = []
+        for s, e in zip(starts, ends):
+            if np.isnat(s) or np.isnat(e):
+                results.append(None)
+                continue
+            s_ord = int(s.astype(int)) + 719163  # convert numpy date to ordinal
+            e_ord = int(e.astype(int)) + 719163
+            if s_ord > e_ord:
+                results.append(0)
+                continue
+            # Count all days from s to e inclusive
+            total = e_ord - s_ord + 1
+            # Subtract Sundays (weekday 6)
+            # First Sunday on or after s_ord
+            first_sun = s_ord + (6 - (s_ord % 7 + 3) % 7) % 7  # Sunday offset
+            sundays = max(0, (e_ord - first_sun) // 7 + 1) if first_sun <= e_ord else 0
+            # Subtract holidays in range
+            hols_in_range = sum(1 for h in holiday_ordinals if s_ord <= h <= e_ord)
+            # working days = total - sundays - holidays, minus 1 (start day not counted)
+            wd = total - sundays - hols_in_range - 1
+            results.append(max(0, wd))
+
+        df.loc[needs_wd, "Working_Days"] = [str(r) if r is not None else "" for r in results]
 
     df["working_days"] = pd.to_numeric(df["Working_Days"], errors="coerce")
 
