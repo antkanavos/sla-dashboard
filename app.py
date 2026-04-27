@@ -245,20 +245,53 @@ def do_sla_matching(df, master):
     return df
 
 # ---------- MASTER TABLE ----------
-MASTER_TABLE_PATH = "history/master_table.csv"
+MASTER_TABLE_PATH = "history/master_table.csv"  # kept for reference only
+
+# ---------- GOOGLE SHEETS ----------
+def get_gsheet():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    gs = st.secrets.get("gsheets", {})
+    creds_dict = {
+        "type":                        gs.get("type", "service_account"),
+        "project_id":                  gs.get("project_id"),
+        "private_key_id":              gs.get("private_key_id"),
+        "private_key":                 gs.get("private_key"),
+        "client_email":                gs.get("client_email"),
+        "client_id":                   gs.get("client_id"),
+        "token_uri":                   gs.get("token_uri", "https://oauth2.googleapis.com/token"),
+        "auth_uri":                    "https://accounts.google.com/o/oauth2/auth",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "universe_domain":             "googleapis.com",
+    }
+    creds  = Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    client = gspread.authorize(creds)
+    return client.open_by_key(gs.get("spreadsheet_id","")).sheet1
 
 @st.cache_data(ttl=30)
-@st.cache_data(ttl=30)
 def load_master_table():
-    from io import StringIO
-    # Use GitHub API (not raw URL) to avoid CDN cache issues
-    c, sha = gh_get(MASTER_TABLE_PATH)
-    if c:
-        try:
-            return pd.read_csv(StringIO(c), dtype=str), sha
-        except:
+    try:
+        ws   = get_gsheet()
+        data = ws.get_all_records(default_blank="")
+        if not data:
             return pd.DataFrame(), None
-    return pd.DataFrame(), None
+        return pd.DataFrame(data, dtype=str), None
+    except Exception as e:
+        return pd.DataFrame(), None
+
+def save_master_table(df_master, sha=None):
+    load_master_table.clear()
+    try:
+        ws      = get_gsheet()
+        headers = df_master.columns.tolist()
+        rows    = df_master.fillna("").astype(str).values.tolist()
+        ws.clear()
+        ws.update([headers] + rows)
+        return True
+    except Exception as e:
+        st.error(f"Google Sheets save error: {e}")
+        return False
 
 def update_master_table(df_new):
     """
@@ -340,14 +373,6 @@ def update_master_table(df_new):
     changed = (n_new > 0) or (n_updated > 0)
     return existing, n_new, n_updated, changed, sha
 
-def save_master_table(df_master, sha):
-    """Save master table CSV to GitHub."""
-    load_master_table.clear()
-    csv_str = df_master.to_csv(index=False)
-    _, current_sha = gh_get(MASTER_TABLE_PATH)
-    effective_sha = current_sha or sha
-    return gh_put(MASTER_TABLE_PATH, csv_str, "master_table update", effective_sha)
-
 def save_snapshot(snap, force_new_id=False):
     """Save snapshot — uses data_hash as unique ID so each data change = new snapshot."""
     snap_id   = snap["snapshot_id"]  # hash-based unique ID
@@ -394,15 +419,9 @@ def load_and_process():
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    # Use GitHub API (not raw URL) to avoid CDN cache
-    from io import StringIO
-    mt_content, mt_sha = gh_get(MASTER_TABLE_PATH)
-    mt = None
-    if mt_content:
-        try:
-            mt = pd.read_csv(StringIO(mt_content), dtype=str)
-        except:
-            mt = None
+    # Load master_table from Google Sheets
+    mt, _ = load_master_table()
+    mt_sha = None
 
     if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
