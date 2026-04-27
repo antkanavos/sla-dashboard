@@ -609,9 +609,9 @@ if "Επισκόπηση" in page:
     # Filters
     shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
     fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
-    with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας")
-    with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="dt", help="Ημερομηνία δημιουργίας")
-    with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="shop")
+    with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="ep_df", help="Ημερομηνία δημιουργίας")
+    with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="ep_dt", help="Ημερομηνία δημιουργίας")
+    with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="ep_shop")
     with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
 
     df = df_full[
