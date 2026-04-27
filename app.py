@@ -596,7 +596,7 @@ with st.sidebar:
 min_d = df_full["Ημ/νία Δημιουργίας"].min().date()
 max_d = df_full["Ημ/νία Δημιουργίας"].max().date()
 
-if "Καταστήματος" not in page:
+if "Επισκόπηση" in page:
     shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
     fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
     with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="df", help="Ημερομηνία δημιουργίας")
@@ -613,6 +613,7 @@ else:
     date_from = min_d
     date_to   = max_d
     df = df_full.copy()
+    shop_filter = "Όλα"
 
 delivered, m = metrics(df)
 
