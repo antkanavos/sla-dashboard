@@ -505,7 +505,7 @@ def load_and_process():
 
     # ── Parse dates ──
     df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True, errors="coerce")
-    df["Ημ/νία Παράδοσης"]   = pd.to_datetime(df["Ημ/νία Παράδοσης"],   dayfirst=True, errors="coerce")
+    df["Ημ/νία Παράδοσης"]   = pd.to_datetime(df["Ημ/νία Παράδοσης"],   infer_datetime_format=True, errors="coerce")
     df["Χρόνος Παράδοσης"]   = pd.to_numeric(df["SLA"], errors="coerce")
     df["Regional Unity"]      = df["Regional_Unity"].replace({"nan":"", "":None})
     df["sla_days"] = df["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
