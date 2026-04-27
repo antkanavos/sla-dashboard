@@ -293,6 +293,15 @@ def save_master_table(df_master, sha=None):
         st.error(f"Google Sheets save error: {e}")
         return False
 
+def normalize_date(d):
+    """Normalize date string to dd/mm/yyyy for consistent comparison."""
+    if not d or str(d).strip() in ("","nan","NaT","None"):
+        return ""
+    try:
+        return pd.to_datetime(str(d), dayfirst=True, errors="coerce").strftime("%d/%m/%Y")
+    except:
+        return str(d).strip()
+
 def update_master_table(df_new):
     """
     Merge df_new into master_table.
@@ -314,8 +323,8 @@ def update_master_table(df_new):
         for _, row in df_new.iterrows():
             rows.append({
                 "Αριθμός":          str(row["Αριθμός"]),
-                "Ημ_Δημιουργίας":   str(row["Ημ/νία Δημιουργίας"]),
-                "Ημ_Παράδοσης":     str(row["Ημ/νία Παράδοσης_str"]).strip(),
+                "Ημ_Δημιουργίας":   normalize_date(str(row["Ημ/νία Δημιουργίας"])),
+                "Ημ_Παράδοσης":     normalize_date(str(row["Ημ/νία Παράδοσης_str"]).strip()),
                 "Key":              str(row["Κλειδί Πελάτη 3"]),
                 "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
                 "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
@@ -340,12 +349,12 @@ def update_master_table(df_new):
 
     for _, row in df_new.iterrows():
         ar      = str(row["Αριθμός"])
-        new_del = str(row["Ημ/νία Παράδοσης_str"]).strip()
+        new_del = normalize_date(str(row["Ημ/νία Παράδοσης_str"]).strip())
 
         if ar not in existing_idx.index:
             rows_to_add.append({
                 "Αριθμός":          ar,
-                "Ημ_Δημιουργίας":   str(row["Ημ/νία Δημιουργίας"]),
+                "Ημ_Δημιουργίας":   normalize_date(str(row["Ημ/νία Δημιουργίας"])),
                 "Ημ_Παράδοσης":     new_del,
                 "Key":              str(row["Κλειδί Πελάτη 3"]),
                 "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
@@ -358,11 +367,11 @@ def update_master_table(df_new):
             })
             n_new += 1
         else:
-            existing_del = str(existing_idx.loc[ar, "Ημ_Παράδοσης"]).strip()
-            if existing_del and existing_del not in ("nan","","NaT"):
+            existing_del = normalize_date(str(existing_idx.loc[ar, "Ημ_Παράδοσης"]).strip())
+            if existing_del:
                 pass  # already delivered → skip
-            elif new_del and new_del not in ("nan","","NaT"):
-                # pending → delivered: update date, clear Working_Days (will be recalculated)
+            elif new_del:
+                # pending → delivered
                 existing.loc[existing["Αριθμός"]==ar, "Ημ_Παράδοσης"] = new_del
                 existing.loc[existing["Αριθμός"]==ar, "Working_Days"]  = ""
                 n_updated += 1
