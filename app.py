@@ -803,7 +803,6 @@ if "Επισκόπηση" in page:
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     if GH_TOKEN and GH_REPO:
         with st.spinner("🔄 Έλεγχος αλλαγών..."):
-            # Load fresh data.csv for update check
             try:
                 df_new_data = pd.read_csv(f"{GH_RAW}/data.csv")
                 df_new_data["Ημ/νία Παράδοσης"] = pd.to_datetime(df_new_data["Ημ/νία Παράδοσης"], dayfirst=True, errors="coerce")
@@ -813,12 +812,8 @@ if "Επισκόπηση" in page:
             if df_new_data is not None:
                 df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_new_data)
 
-            if df_new_data is not None:
-                df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_new_data)
-
                 if changed:
                     ok_mt = save_master_table(df_processed, mt_sha)
-                    load_and_process.clear()
                     d_all, m_all = metrics(df_full)
                     snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_updated)
                     index = load_index()
