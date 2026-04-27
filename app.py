@@ -247,13 +247,15 @@ def do_sla_matching(df, master):
 # ---------- MASTER TABLE ----------
 MASTER_TABLE_PATH = "history/master_table.csv"
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def load_master_table():
     from io import StringIO
-    c, sha = gh_get(MASTER_TABLE_PATH)
-    if c:
-        return pd.read_csv(StringIO(c), dtype=str), sha
-    return pd.DataFrame(), None
+    url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
+    try:
+        mt = pd.read_csv(url, dtype=str)
+        return mt, None
+    except:
+        return pd.DataFrame(), None
 
 def update_master_table(df_new):
     """
