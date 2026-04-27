@@ -394,14 +394,15 @@ def load_and_process():
     master_sla = load_sla_master()
     holidays   = load_holidays()
 
-    import time
-    mt_url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
-    mt_sha = None
+    # Use GitHub API (not raw URL) to avoid CDN cache
+    from io import StringIO
+    mt_content, mt_sha = gh_get(MASTER_TABLE_PATH)
     mt = None
-    try:
-        mt = pd.read_csv(mt_url, dtype=str)
-    except:
-        mt = None
+    if mt_content:
+        try:
+            mt = pd.read_csv(StringIO(mt_content), dtype=str)
+        except:
+            mt = None
 
     if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
