@@ -276,7 +276,10 @@ def load_master_table():
         data = ws.get_all_records(default_blank="")
         if not data:
             return pd.DataFrame(), None
-        return pd.DataFrame(data, dtype=str), None
+        df = pd.DataFrame(data, dtype=str)
+        # Replace "nan" strings with empty
+        df = df.replace({"nan":"", "NaT":"", "None":""})
+        return df, None
     except Exception as e:
         return pd.DataFrame(), None
 
