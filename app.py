@@ -595,32 +595,33 @@ with st.sidebar:
 # ---------- FILTERS ----------
 min_d = df_full["Ημ/νία Δημιουργίας"].min().date()
 max_d = df_full["Ημ/νία Δημιουργίας"].max().date()
-date_from   = min_d
-date_to     = max_d
-shop_filter = "Όλα"
-df          = df_full.copy()
+
+# Always render filters — only Επισκόπηση uses them
+shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
+fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
+
+if "Επισκόπηση" in page:
+    with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="ep_df")
+    with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="ep_dt")
+    with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="ep_shop")
+    with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
+else:
+    date_from   = min_d
+    date_to     = max_d
+    shop_filter = "Όλα"
+
+df = df_full[
+    (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
+    (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
+].copy()
+if shop_filter != "Όλα":
+    df = df[df["Κατάστημα"] == shop_filter].copy()
 delivered, m = metrics(df)
 
 # ══════════════════════════════════════════════
 # PAGE: ΕΠΙΣΚΟΠΗΣΗ
 # ══════════════════════════════════════════════
 if "Επισκόπηση" in page:
-
-    # Filters
-    shops = ["Όλα"] + sorted(df_full["Κατάστημα"].dropna().unique().tolist())
-    fc1,fc2,fc3,fc4 = st.columns([2,2,3,3])
-    with fc1: date_from = st.date_input("Από", value=min_d, min_value=min_d, max_value=max_d, key="ep_df", help="Ημερομηνία δημιουργίας")
-    with fc2: date_to   = st.date_input("Έως", value=max_d, min_value=min_d, max_value=max_d, key="ep_dt", help="Ημερομηνία δημιουργίας")
-    with fc3: shop_filter = st.selectbox("Κατάστημα", shops, key="ep_shop")
-    with fc4: st.markdown(f"<div style='text-align:right;font-size:11px;color:#8fa3c0;padding-top:28px;'>Φίλτρο βάσει <b>ημ. δημιουργίας</b> &nbsp;·&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')} 🔄</div>", unsafe_allow_html=True)
-
-    df = df_full[
-        (df_full["Ημ/νία Δημιουργίας"].dt.date >= date_from) &
-        (df_full["Ημ/νία Δημιουργίας"].dt.date <= date_to)
-    ].copy()
-    if shop_filter != "Όλα":
-        df = df[df["Κατάστημα"] == shop_filter].copy()
-    delivered, m = metrics(df)
 
     # KPIs
     k1,k2,k3,k4,k5 = st.columns(5)
