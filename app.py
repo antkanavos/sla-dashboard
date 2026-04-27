@@ -803,26 +803,34 @@ if "Επισκόπηση" in page:
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     if GH_TOKEN and GH_REPO:
         with st.spinner("🔄 Έλεγχος αλλαγών..."):
-            # Step 1: update master table
-            df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_full)
+            # Load fresh data.csv for update check
+            try:
+                df_new_data = pd.read_csv(f"{GH_RAW}/data.csv")
+                df_new_data["Ημ/νία Παράδοσης"] = pd.to_datetime(df_new_data["Ημ/νία Παράδοσης"], dayfirst=True, errors="coerce")
+            except:
+                df_new_data = None
 
-            if changed:
-                # Save updated master table
-                ok_mt = save_master_table(df_processed, mt_sha)
-                # Step 2: compute current hash AFTER update
-                d_all, m_all = metrics(df_full)
-                snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_updated)
-                # Check if this exact hash already in index (idempotent)
-                index = load_index()
-                existing_ids = [s.get("snapshot_id","") for s in index]
-                if snap["snapshot_id"] not in existing_ids:
-                    ok_snap = save_snapshot(snap)
-                    msg = f"✅ Νέο snapshot: <b>{n_new}</b> νέες αποστολές, <b>{n_updated}</b> pending → delivered"
-                    st.markdown(f'<div class="snap-ok">{msg}</div>', unsafe_allow_html=True)
+            if df_new_data is not None:
+                df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_new_data)
+
+            if df_new_data is not None:
+                df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_new_data)
+
+                if changed:
+                    ok_mt = save_master_table(df_processed, mt_sha)
+                    load_and_process.clear()
+                    d_all, m_all = metrics(df_full)
+                    snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_updated)
+                    index = load_index()
+                    existing_ids = [s.get("snapshot_id","") for s in index]
+                    if snap["snapshot_id"] not in existing_ids:
+                        ok_snap = save_snapshot(snap)
+                        msg = f"✅ Νέο snapshot: <b>{n_new}</b> νέες αποστολές, <b>{n_updated}</b> pending → delivered"
+                        st.markdown(f'<div class="snap-ok">{msg}</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="snap-ok">✅ Τα δεδομένα είναι ήδη ενημερωμένα</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div class="snap-ok">✅ Τα δεδομένα είναι ήδη ενημερωμένα</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="snap-ok">✅ Καμία αλλαγή — δεν χρειάζεται νέο snapshot</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="snap-ok">✅ Καμία αλλαγή — δεν χρειάζεται νέο snapshot</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="snap-warn">⚠️ GitHub token δεν έχει οριστεί — ιστορικό απενεργοποιημένο</div>', unsafe_allow_html=True)
 
