@@ -248,14 +248,17 @@ def do_sla_matching(df, master):
 MASTER_TABLE_PATH = "history/master_table.csv"
 
 @st.cache_data(ttl=30)
+@st.cache_data(ttl=30)
 def load_master_table():
     from io import StringIO
-    url = f"{GH_RAW}/{MASTER_TABLE_PATH}"
-    try:
-        mt = pd.read_csv(url, dtype=str)
-        return mt, None
-    except:
-        return pd.DataFrame(), None
+    # Use GitHub API (not raw URL) to avoid CDN cache issues
+    c, sha = gh_get(MASTER_TABLE_PATH)
+    if c:
+        try:
+            return pd.read_csv(StringIO(c), dtype=str), sha
+        except:
+            return pd.DataFrame(), None
+    return pd.DataFrame(), None
 
 def update_master_table(df_new):
     """
