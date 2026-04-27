@@ -282,6 +282,7 @@ def load_master_table():
 
 def save_master_table(df_master, sha=None):
     load_master_table.clear()
+    load_and_process.clear()
     try:
         ws      = get_gsheet()
         headers = df_master.columns.tolist()
