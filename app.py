@@ -364,7 +364,7 @@ def update_master_table(df_new):
     holidays   = load_holidays()
 
     df_new = df_new.copy()
-    df_new["_key_clean"] = df_new["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
+    df_new["_key_clean"] = df_new["Κλειδί Πελάτη 3"].astype(str).str.extract(r"(\d+)")
     df_new = df_new[df_new["_key_clean"].notna()].drop(columns=["_key_clean"]).reset_index(drop=True)
     df_new["Αριθμός"] = df_new["Αριθμός"].astype(str)
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
