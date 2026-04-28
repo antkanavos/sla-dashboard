@@ -306,54 +306,77 @@ def normalize_date(d):
     except:
         return str(d).strip()
 
+def gsheet_with_backoff(func, *args, **kwargs):
+    """Call a gspread function with exponential backoff on rate limit."""
+    import time
+    for attempt in range(5):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                wait = 2 ** attempt
+                time.sleep(wait)
+            else:
+                raise
+    return func(*args, **kwargs)
+
+def compute_sla_and_wd(rows_df, master_sla, holidays):
+    """Compute SLA matching and Working_Days for a DataFrame of new rows."""
+    if rows_df.empty:
+        return rows_df
+
+    rows_df = rows_df.copy().reset_index(drop=True)
+    rows_df["KEY_CLEAN"]  = rows_df["Key"].str.extract(r"(\d+)")
+    rows_df["ADDR_CLEAN"] = rows_df["Διεύθυνση"].apply(clean_addr)
+    rows_df["POSTCODE"]   = rows_df["ΤΚ"].apply(clean_pc)
+
+    # Temp rename for do_sla_matching
+    tmp = rows_df.rename(columns={"Key":"Κλειδί Πελάτη 3","Διεύθυνση":"Δ/νση Παράδοσης","ΤΚ":"Τ.Κ Παράδοσης"})
+    tmp = do_sla_matching(tmp, master_sla)
+    rows_df["SLA"]          = tmp["Χρόνος Παράδοσης"].astype(str).replace("nan","")
+    rows_df["Regional_Unity"] = tmp["Regional Unity"].astype(str).replace("nan","")
+
+    # Working days for delivered rows
+    rows_df["_dm"] = pd.to_datetime(rows_df["Ημ_Δημιουργίας"], dayfirst=True, errors="coerce")
+    rows_df["_dp"] = pd.to_datetime(rows_df["Ημ_Παράδοσης"],   dayfirst=True, errors="coerce")
+    wds = []
+    for _, r in rows_df.iterrows():
+        if pd.isna(r["_dm"]) or pd.isna(r["_dp"]):
+            wds.append("")
+        else:
+            days = pd.date_range(r["_dm"], r["_dp"])
+            wd = len([d for d in days if d.weekday()!=6 and d.date() not in holidays]) - 1
+            wds.append(str(max(0, wd)))
+    rows_df["Working_Days"] = wds
+    rows_df.drop(columns=["KEY_CLEAN","ADDR_CLEAN","POSTCODE","_dm","_dp"], inplace=True)
+    return rows_df
+
 def update_master_table(df_new):
     """
-    Merge df_new into master_table.
-    - Νέα εγγραφή → προσθήκη (χωρίς SLA/Working_Days ακόμα)
-    - Υπάρχει + delivered → skip
-    - Υπάρχει + pending + τώρα delivered → overwrite Ημ_Παράδοσης, καθαρισμός Working_Days
-    - Υπάρχει + pending + ακόμα pending → skip
+    Update Google Sheet directly:
+    - Νέες εγγραφές → SLA matching + WD → append
+    - Pending→delivered → WD → batch cell update
+    - Skip: ήδη delivered, ακόμα pending, χωρίς KEY
     """
+    import time
     existing, sha = load_master_table()
+    master_sla = load_sla_master()
+    holidays   = load_holidays()
+
     df_new = df_new.copy()
-    # Φιλτράρισμα εγγραφών χωρίς KEY
     df_new["_key_clean"] = df_new["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
-    df_new = df_new[df_new["_key_clean"].notna()].drop(columns=["_key_clean"])
-    df_new = df_new.reset_index(drop=True)
+    df_new = df_new[df_new["_key_clean"].notna()].drop(columns=["_key_clean"]).reset_index(drop=True)
     df_new["Αριθμός"] = df_new["Αριθμός"].astype(str)
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
 
-    new_cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
-                "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
-
     if existing.empty:
-        rows = []
-        for _, row in df_new.iterrows():
-            rows.append({
-                "Αριθμός":          str(row["Αριθμός"]),
-                "Ημ_Δημιουργίας":   normalize_date(str(row["Ημ/νία Δημιουργίας"])),
-                "Ημ_Παράδοσης":     normalize_date(str(row["Ημ/νία Παράδοσης_str"]).strip()),
-                "Key":              str(row["Κλειδί Πελάτη 3"]),
-                "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
-                "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
-                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης", "")),
-                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής", "")),
-                "SLA":              "",
-                "Regional_Unity":   "",
-                "Working_Days":     "",
-            })
-        result = pd.DataFrame(rows, columns=new_cols)
-        return result, len(result), 0, True, sha
+        return pd.DataFrame(), 0, 0, False, sha
 
     existing["Αριθμός"] = existing["Αριθμός"].astype(str)
-    # Ensure new columns exist
-    for col in ["SLA","Regional_Unity","Working_Days"]:
-        if col not in existing.columns:
-            existing[col] = ""
-
     existing_idx = existing.set_index("Αριθμός")
-    n_new = 0; n_updated = 0
-    rows_to_add = []
+
+    rows_to_add  = []
+    rows_updated = []  # (row_number_in_sheet, new_del, wd)
 
     for _, row in df_new.iterrows():
         ar      = str(row["Αριθμός"])
@@ -367,28 +390,78 @@ def update_master_table(df_new):
                 "Key":              str(row["Κλειδί Πελάτη 3"]),
                 "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
                 "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
-                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης", "")),
-                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής", "")),
+                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης","")),
+                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής","")),
                 "SLA":              "",
                 "Regional_Unity":   "",
                 "Working_Days":     "",
             })
-            n_new += 1
         else:
-            existing_del = normalize_date(str(existing_idx.loc[ar, "Ημ_Παράδοσης"]).strip())
+            existing_del = normalize_date(str(existing_idx.loc[ar,"Ημ_Παράδοσης"]).strip())
             if existing_del:
-                pass  # already delivered → skip
+                pass  # ήδη delivered
             elif new_del:
-                # pending → delivered
-                existing.loc[existing["Αριθμός"]==ar, "Ημ_Παράδοσης"] = new_del
-                existing.loc[existing["Αριθμός"]==ar, "Working_Days"]  = ""
-                n_updated += 1
+                rows_updated.append((ar, new_del))
 
+    n_new     = len(rows_to_add)
+    n_updated = len(rows_updated)
+    changed   = n_new > 0 or n_updated > 0
+
+    if not changed:
+        return existing, 0, 0, False, sha
+
+    ws = get_gsheet()
+
+    # ── 1. Append new rows (with SLA + WD) ──
     if rows_to_add:
-        existing = pd.concat([existing, pd.DataFrame(rows_to_add, columns=new_cols)], ignore_index=True)
+        new_df = pd.DataFrame(rows_to_add)
+        new_df = compute_sla_and_wd(new_df, master_sla, holidays)
+        cols   = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
+                  "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
+        new_rows = new_df[cols].fillna("").astype(str).values.tolist()
+        gsheet_with_backoff(ws.append_rows, new_rows, value_input_option="RAW")
 
-    changed = (n_new > 0) or (n_updated > 0)
+    # ── 2. Update pending→delivered (find row numbers first) ──
+    if rows_updated:
+        # Get all data to find row numbers
+        all_data = gsheet_with_backoff(ws.get_all_values)
+        ar_to_row = {str(r[0]): i+1 for i, r in enumerate(all_data) if i > 0}  # +1 for 1-indexed, skip header
+
+        # Find column indices
+        headers = all_data[0]
+        col_del = headers.index("Ημ_Παράδοσης") + 1  # 1-indexed
+        col_wd  = headers.index("Working_Days") + 1
+        col_dm  = headers.index("Ημ_Δημιουργίας") + 1
+
+        batch_updates = []
+        for ar, new_del in rows_updated:
+            if ar not in ar_to_row:
+                continue
+            row_num = ar_to_row[ar]
+            # Calculate working days
+            dm_str = all_data[row_num-1][col_dm-1]
+            dm = pd.to_datetime(dm_str, dayfirst=True, errors="coerce")
+            dp = pd.to_datetime(new_del, dayfirst=True, errors="coerce")
+            wd = ""
+            if not pd.isna(dm) and not pd.isna(dp):
+                days = pd.date_range(dm, dp)
+                wd = str(max(0, len([d for d in days if d.weekday()!=6 and d.date() not in holidays])-1))
+
+            batch_updates.append({
+                "range": f"C{row_num}",  # Ημ_Παράδοσης
+                "values": [[new_del]]
+            })
+            batch_updates.append({
+                "range": f"K{row_num}",  # Working_Days
+                "values": [[wd]]
+            })
+
+        if batch_updates:
+            gsheet_with_backoff(ws.batch_update, batch_updates)
+
+    load_master_table.clear()
     return existing, n_new, n_updated, changed, sha
+
 
 def save_snapshot(snap, force_new_id=False):
     """Save snapshot — uses data_hash as unique ID so each data change = new snapshot."""
@@ -439,9 +512,6 @@ def load_and_process():
     # Load master_table from Google Sheets
     mt, _ = load_master_table()
     mt_sha = None
-
-    if mt is not None and len(mt) > 0:
-        st.session_state["_mt_cols"] = mt.columns.tolist()
 
     if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
@@ -546,9 +616,6 @@ def load_and_process():
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
-
-if "_mt_cols" in st.session_state:
-    st.write("DEBUG Sheet columns:", st.session_state["_mt_cols"])
 
 # ---------- METRICS ----------
 def metrics(df):
@@ -835,16 +902,16 @@ if "Επισκόπηση" in page:
                 df_new_data = None
 
             if df_new_data is not None:
-                df_processed, n_new, n_updated, changed, mt_sha = update_master_table(df_new_data)
+                _, n_new, n_updated, changed, _ = update_master_table(df_new_data)
 
                 if changed:
-                    ok_mt = save_master_table(df_processed, mt_sha)
+                    load_and_process.clear()
                     d_all, m_all = metrics(df_full)
                     snap = build_snapshot(df_full, m_all, d_all, n_new=n_new, n_updated=n_updated)
                     index = load_index()
                     existing_ids = [s.get("snapshot_id","") for s in index]
                     if snap["snapshot_id"] not in existing_ids:
-                        ok_snap = save_snapshot(snap)
+                        save_snapshot(snap)
                         msg = f"✅ Νέο snapshot: <b>{n_new}</b> νέες αποστολές, <b>{n_updated}</b> pending → delivered"
                         st.markdown(f'<div class="snap-ok">{msg}</div>', unsafe_allow_html=True)
                     else:
