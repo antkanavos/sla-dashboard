@@ -316,6 +316,10 @@ def update_master_table(df_new):
     """
     existing, sha = load_master_table()
     df_new = df_new.copy()
+    # Φιλτράρισμα εγγραφών χωρίς KEY
+    df_new["_key_clean"] = df_new["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
+    df_new = df_new[df_new["_key_clean"].notna()].drop(columns=["_key_clean"])
+    df_new = df_new.reset_index(drop=True)
     df_new["Αριθμός"] = df_new["Αριθμός"].astype(str)
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
 
@@ -436,6 +440,9 @@ def load_and_process():
     mt, _ = load_master_table()
     mt_sha = None
 
+    if mt is not None and len(mt) > 0:
+        st.session_state["_mt_cols"] = mt.columns.tolist()
+
     if mt is None or len(mt) == 0 or "Ημ_Δημιουργίας" not in (mt.columns.tolist() if mt is not None else []):
         df_raw = pd.read_csv(f"{GH_RAW}/data.csv")
         df_raw["KEY_CLEAN"] = df_raw["Κλειδί Πελάτη 3"].str.extract(r"(\d+)")
@@ -539,6 +546,9 @@ def load_and_process():
 
 with st.spinner("Φόρτωση δεδομένων..."):
     df_full = load_and_process()
+
+if "_mt_cols" in st.session_state:
+    st.write("DEBUG Sheet columns:", st.session_state["_mt_cols"])
 
 # ---------- METRICS ----------
 def metrics(df):
