@@ -298,11 +298,11 @@ def save_master_table(df_master, sha=None):
         return False
 
 def normalize_date(d):
-    """Normalize date string to dd/mm/yyyy for consistent comparison."""
+    """Normalize date string to yyyy-mm-dd (unambiguous, avoids Google Sheets mm/dd swap)."""
     if not d or str(d).strip() in ("","nan","NaT","None"):
         return ""
     try:
-        return pd.to_datetime(str(d), dayfirst=True, errors="coerce").strftime("%d/%m/%Y")
+        return pd.to_datetime(str(d), dayfirst=True, errors="coerce").strftime("%Y-%m-%d")
     except:
         return str(d).strip()
 
