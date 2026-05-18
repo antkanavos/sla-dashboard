@@ -174,5 +174,17 @@
     "missing_sla": 0,
     "n_new": 3853,
     "n_updated": 178
+  },
+  {
+    "snapshot_id": "3ac1f392161b",
+    "date": "2026-05-14",
+    "uploaded_at": "2026-05-18T08:21:30.354227",
+    "total": 92846,
+    "delivered": 92469,
+    "on_time": 86507,
+    "sla_pct": 93.55,
+    "missing_sla": 0,
+    "n_new": 618,
+    "n_updated": 228
   }
 ]
