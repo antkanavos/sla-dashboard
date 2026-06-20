@@ -298,13 +298,33 @@ def save_master_table(df_master, sha=None):
         return False
 
 def normalize_date(d):
-    """Normalize date string to yyyy-mm-dd (unambiguous, avoids Google Sheets mm/dd swap)."""
+    """Normalize date string to dd/mm/yyyy. Google Sheets misreads yyyy-mm-dd
+    when both the 'month' and 'day' parts are <=12 (e.g. 2026-12-05 becomes
+    05/12/2026 instead of staying as 2026-12-05), silently swapping day/month.
+    dd/mm/yyyy matches the sheet's locale and is read back correctly."""
     if not d or str(d).strip() in ("","nan","NaT","None"):
         return ""
     try:
-        return pd.to_datetime(str(d), dayfirst=True, errors="coerce").strftime("%Y-%m-%d")
+        parsed = pd.to_datetime(str(d), dayfirst=True, errors="coerce")
+        if pd.isna(parsed):
+            return ""
+        return parsed.strftime("%d/%m/%Y")
     except:
         return str(d).strip()
+
+def parse_date_robust(series):
+    """Parse a column that may contain a mix of dd/mm/yyyy (current format)
+    and legacy yyyy-mm-dd (old ISO format some rows may still have from
+    before the normalize_date fix)."""
+    s = series.astype(str).str.strip().str.lstrip("'").replace({"":"NaT","nan":"NaT","None":"NaT","NaT":"NaT"})
+    iso_mask = s.str.match(r"^\d{4}-\d{2}-\d{2}")
+    parsed = pd.Series(pd.NaT, index=s.index)
+    if iso_mask.any():
+        parsed[iso_mask] = pd.to_datetime(s[iso_mask], errors="coerce")
+    non_iso = ~iso_mask & (s != "NaT")
+    if non_iso.any():
+        parsed[non_iso] = pd.to_datetime(s[non_iso], dayfirst=True, errors="coerce")
+    return parsed
 
 def gsheet_with_backoff(func, *args, **kwargs):
     """Call a gspread function with exponential backoff on rate limit."""
@@ -370,7 +390,46 @@ def update_master_table(df_new):
     df_new["Ημ/νία Παράδοσης_str"] = df_new["Ημ/νία Παράδοσης"].astype(str).replace("NaT","")
 
     if existing.empty:
-        return pd.DataFrame(), 0, 0, False, sha
+        # Master sheet has no data rows yet (e.g. after a reset) → bulk insert everything.
+        ws = get_gsheet()
+        cols = ["Αριθμός","Ημ_Δημιουργίας","Ημ_Παράδοσης","Key","Διεύθυνση","ΤΚ",
+                "Κωδ_Καταστήματος","Κατάστημα","SLA","Regional_Unity","Working_Days"]
+
+        # Make sure the header row exists.
+        try:
+            header_check = gsheet_with_backoff(ws.row_values, 1)
+        except Exception:
+            header_check = []
+        if header_check != cols:
+            gsheet_with_backoff(ws.update, [cols], "A1")
+
+        all_rows_to_add = []
+        for _, row in df_new.iterrows():
+            all_rows_to_add.append({
+                "Αριθμός":          str(row["Αριθμός"]),
+                "Ημ_Δημιουργίας":   normalize_date(str(row["Ημ/νία Δημιουργίας"])),
+                "Ημ_Παράδοσης":     normalize_date(str(row["Ημ/νία Παράδοσης_str"]).strip()),
+                "Key":              str(row["Κλειδί Πελάτη 3"]),
+                "Διεύθυνση":        str(row["Δ/νση Παράδοσης"]),
+                "ΤΚ":               str(row["Τ.Κ Παράδοσης"]),
+                "Κωδ_Καταστήματος": str(row.get("Κωδ. Καταστήματος Παράδοσης","")),
+                "Κατάστημα":        str(row.get("Κατάστημα Παραλαβής","")),
+                "SLA":              "",
+                "Regional_Unity":   "",
+                "Working_Days":     "",
+            })
+
+        total = len(all_rows_to_add)
+        CHUNK = 500
+        for start in range(0, total, CHUNK):
+            chunk = all_rows_to_add[start:start+CHUNK]
+            chunk_df = pd.DataFrame(chunk)
+            chunk_df = compute_sla_and_wd(chunk_df, master_sla, holidays)
+            chunk_rows = chunk_df[cols].fillna("").astype(str).values.tolist()
+            gsheet_with_backoff(ws.append_rows, chunk_rows, value_input_option="RAW")
+
+        load_master_table.clear()
+        return pd.DataFrame(all_rows_to_add), total, 0, True, sha
 
     existing["Αριθμός"] = existing["Αριθμός"].astype(str)
     existing_idx = existing.set_index("Αριθμός")
@@ -440,7 +499,7 @@ def update_master_table(df_new):
             row_num = ar_to_row[ar]
             # Calculate working days
             dm_str = all_data[row_num-1][col_dm-1]
-            dm = pd.to_datetime(dm_str, dayfirst=True, errors="coerce")
+            dm = parse_date_robust(pd.Series([dm_str])).iloc[0]
             dp = pd.to_datetime(new_del, dayfirst=True, errors="coerce")
             wd = ""
             if not pd.isna(dm) and not pd.isna(dp):
@@ -584,8 +643,8 @@ def load_and_process():
             df.at[orig_i, "Regional_Unity"] = str(matched.at[i, "Regional Unity"])   if pd.notna(matched.at[i, "Regional Unity"])   else ""
 
     # ── Parse dates ──
-    df["Ημ/νία Δημιουργίας"] = pd.to_datetime(df["Ημ/νία Δημιουργίας"], dayfirst=True, errors="coerce")
-    df["Ημ/νία Παράδοσης"]   = pd.to_datetime(df["Ημ/νία Παράδοσης"],   errors="coerce")
+    df["Ημ/νία Δημιουργίας"] = parse_date_robust(df["Ημ/νία Δημιουργίας"])
+    df["Ημ/νία Παράδοσης"]   = parse_date_robust(df["Ημ/νία Παράδοσης"])
     df["Χρόνος Παράδοσης"]   = pd.to_numeric(df["SLA"], errors="coerce")
     df["Regional Unity"]      = df["Regional_Unity"].replace({"nan":"", "":None})
     df["sla_days"] = df["Χρόνος Παράδοσης"].map({24:1, 48:2, 96:4})
