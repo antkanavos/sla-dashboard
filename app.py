@@ -695,7 +695,7 @@ def metrics(df):
     d["delay_days"] = (d["working_days"] - d["sla_days"]).clip(lower=0)
     ot = int(d["on_time"].sum())
     delivered_df = df[df["Ημ/νία Παράδοσης"].notna()]
-    avg_days = delivered_df["working_days"].mean()
+    avg_days = delivered_df["working_days"].clip(lower=1).mean()
     return d, {
         "total":       len(df),
         "delivered":   int(df["Ημ/νία Παράδοσης"].notna().sum()),
@@ -889,7 +889,7 @@ if "Επισκόπηση" in page:
         if not len(g):
             return f'<div style="background:white;border-radius:14px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:220px;"><div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:12px;margin-top:8px;">Δεν υπάρχουν</div></div>'
         ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
-        avg_days = g["working_days"].mean()
+        avg_days = g["working_days"].clip(lower=1).mean()
         avg_days = round(avg_days,2) if pd.notna(avg_days) else 0
         return f"""<div style="background:white;border-radius:14px;padding:18px 22px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:22px;">
             {donut_svg(pct,"#22c55e","#fee2e2",avg_days=avg_days)}
@@ -968,7 +968,7 @@ if "Επισκόπηση" in page:
             def grp_p(sd): g=mdel[mdel["sla_days"]==sd]; return g["on_time"].sum()/len(g)*100 if len(g) else 0
             def grp_avg(sd):
                 g = mdel[mdel["sla_days"]==sd]
-                v = g["working_days"].mean()
+                v = g["working_days"].clip(lower=1).mean()
                 return round(v,2) if pd.notna(v) else 0
             def bar(lbl,pct): c="#22c55e" if pct>=85 else "#f97316" if pct>=70 else "#ef4444"; return f'<div class="bar-lbl">{lbl}<span style="float:right;font-weight:700;color:{c};">{pct:.2f}%</span></div><div class="bar-wrap"><div style="width:{min(pct,100)}%;height:100%;background:{c};border-radius:6px;"></div></div>'
             p24=grp_p(1); p48=grp_p(2); p96=grp_p(4)
