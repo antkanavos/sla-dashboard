@@ -694,12 +694,15 @@ def metrics(df):
     d["on_time"]    = d["working_days"] <= d["sla_days"]
     d["delay_days"] = (d["working_days"] - d["sla_days"]).clip(lower=0)
     ot = int(d["on_time"].sum())
+    delivered_df = df[df["Ημ/νία Παράδοσης"].notna()]
+    avg_days = delivered_df["working_days"].mean()
     return d, {
         "total":       len(df),
         "delivered":   int(df["Ημ/νία Παράδοσης"].notna().sum()),
         "on_time":     ot,
         "sla_pct":     round(ot/len(d)*100,2) if len(d) else 0,
         "missing_sla": int(df["sla_days"].isna().sum()),
+        "avg_days":    round(avg_days,2) if pd.notna(avg_days) else 0,
     }
 
 def build_snapshot(df, m, del_df, n_new=0, n_updated=0):
@@ -791,7 +794,7 @@ if "Επισκόπηση" in page:
         (k2,"✅","ΠΑΡΑΔΟΘΗΚΑΝ", f"{m['delivered']:,}", f"{m['delivered']/m['total']*100:.2f}% του συνόλου" if m['total'] else "—", ""),
         (k3,"🎯","ΕΝΤΟΣ SLA", f"{m['on_time']:,}", f"{m['on_time']/m['delivered']*100:.2f}% παραδοθέντων" if m['delivered'] else "—", ""),
         (k4,"📈","SLA % (ΕΝΤΟΣ)", f"{m['sla_pct']:.2f}%", f"{m['on_time']:,} / {m['delivered']:,}", "kpi-purple"),
-        (k5,"⚠️","MISSING SLA", f"{m['missing_sla']:,}", "χωρίς αντιστοίχιση", ""),
+        (k5,"📅","Μ.Ο. ΗΜΕΡΩΝ ΠΑΡΑΔΟΣΗΣ", f"{m['avg_days']:.2f}", "εργάσιμες ημέρες", ""),
     ]
     for col,icon,lbl,val,sub,cls in kpi_data:
         with col:
@@ -801,6 +804,8 @@ if "Επισκόπηση" in page:
                 <div class="kpi-value {cls}">{val}</div>
                 <div class="kpi-sub">{sub}</div>
             </div>""", unsafe_allow_html=True)
+
+    st.markdown(f'<div style="text-align:right;font-size:11px;color:#8fa3c0;margin-top:6px;">⚠️ Missing SLA (χωρίς αντιστοίχιση): <b style="color:#5a7090;">{m["missing_sla"]:,}</b></div>', unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -827,31 +832,41 @@ if "Επισκόπηση" in page:
             </svg>
         </div>"""
 
-    def donut_svg(pct, c_in, c_out, size=200):
-        r = 72; cx = cy = 90; stroke = 18
+    def donut_svg(pct, c_in, c_out, avg_days=None, size=240):
+        r = 78; cx = cy = 96; stroke = 19
         circ = 2 * 3.14159 * r
         filled = circ * pct / 100
         gap = circ - filled
-        return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
+        if avg_days is not None:
+            center_text = f"""<text x="{cx}" y="{cy-16}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="27" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+            <text x="{cx}" y="{cy+7}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+            <line x1="{cx-26}" y1="{cy+19}" x2="{cx+26}" y2="{cy+19}" stroke="#eef1f5" stroke-width="1"/>
+            <text x="{cx}" y="{cy+39}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="19" font-weight="800" fill="#374151">{avg_days:.2f}<tspan font-size="11" font-weight="600" fill="#8fa3c0"> Μ.Ο. ημ.</tspan></text>"""
+        else:
+            center_text = f"""<text x="{cx}" y="{cy-8}" text-anchor="middle" dominant-baseline="central"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
+            <text x="{cx}" y="{cy+18}" text-anchor="middle"
+                font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">εντός SLA</text>"""
+        return f"""<svg viewBox="0 0 192 192" width="{size}" height="{size}" style="flex-shrink:0;">
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_out}" stroke-width="{stroke}"/>
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{c_in}" stroke-width="{stroke}"
                 stroke-dasharray="{filled:.2f} {gap:.2f}" stroke-linecap="round"
                 transform="rotate(-90 {cx} {cy})"/>
-            <text x="{cx}" y="{cy-8}" text-anchor="middle" dominant-baseline="central"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">{pct:.1f}%</text>
-            <text x="{cx}" y="{cy+18}" text-anchor="middle"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">εντός SLA</text>
+            {center_text}
         </svg>"""
 
-    def seg_svg(d24, d48, d96, size=200):
+    def seg_svg(d24, d48, d96, size=240):
         total = d24 + d48 + d96
-        r = 72; cx = cy = 90; sw = 18
+        r = 78; cx = cy = 96; sw = 19
         circ = 2 * 3.14159265 * r
         if total == 0:
-            return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
+            return f"""<svg viewBox="0 0 192 192" width="{size}" height="{size}" style="flex-shrink:0;">
                 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
                 <text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central"
-                    font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">0</text>
+                    font-family="Plus Jakarta Sans,sans-serif" font-size="27" font-weight="800" fill="#1a2235">0</text>
             </svg>"""
         gap = circ * 0.016
         def seg(count, color, offset):
@@ -861,21 +876,23 @@ if "Επισκόπηση" in page:
                 stroke-dasharray="{length:.3f} {circ-length:.3f}" stroke-linecap="butt"
                 transform="rotate({offset-90} {cx} {cy})"/>"""
         a24=(d24/total)*360; a48=(d48/total)*360
-        return f"""<svg viewBox="0 0 180 180" width="{size}" height="{size}" style="flex-shrink:0;">
+        return f"""<svg viewBox="0 0 192 192" width="{size}" height="{size}" style="flex-shrink:0;">
             <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f0f2f5" stroke-width="{sw}"/>
             {seg(d24,"#22c55e",0)}{seg(d48,"#f97316",a24)}{seg(d96,"#ef4444",a24+a48)}
             <text x="{cx}" y="{cy-8}" text-anchor="middle" dominant-baseline="central"
-                font-family="Plus Jakarta Sans,sans-serif" font-size="26" font-weight="800" fill="#1a2235">{total:,}</text>
+                font-family="Plus Jakarta Sans,sans-serif" font-size="27" font-weight="800" fill="#1a2235">{total:,}</text>
             <text x="{cx}" y="{cy+18}" text-anchor="middle"
                 font-family="Plus Jakarta Sans,sans-serif" font-size="11" font-weight="600" fill="#8fa3c0">αποστολές</text>
         </svg>"""
 
     def card_sla(g, lbl):
         if not len(g):
-            return f'<div style="background:white;border-radius:14px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:200px;"><div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:12px;margin-top:8px;">Δεν υπάρχουν</div></div>'
+            return f'<div style="background:white;border-radius:14px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;min-height:220px;"><div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;">{lbl}</div><div style="color:#ccc;font-size:12px;margin-top:8px;">Δεν υπάρχουν</div></div>'
         ot  = int(g["on_time"].sum()); lat = len(g)-ot; pct = ot/len(g)*100
-        return f"""<div style="background:white;border-radius:14px;padding:16px 20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:20px;">
-            {donut_svg(pct,"#22c55e","#fee2e2")}
+        avg_days = g["working_days"].mean()
+        avg_days = round(avg_days,2) if pd.notna(avg_days) else 0
+        return f"""<div style="background:white;border-radius:14px;padding:18px 22px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:22px;">
+            {donut_svg(pct,"#22c55e","#fee2e2",avg_days=avg_days)}
             <div style="flex:1;min-width:0;">
                 <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">{lbl}</div>
                 <div style="font-size:13px;color:#444;font-weight:500;margin-bottom:6px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:7px;"></span>Εντός &nbsp;<b style="color:#1a2235;font-size:15px;">{ot:,}</b> <span style="color:#8fa3c0">({pct:.2f}%)</span></div>
@@ -890,7 +907,7 @@ if "Επισκόπηση" in page:
         d24 = len(dd[dd["sla_days"]==1]); d48 = len(dd[dd["sla_days"]==2]); d96 = len(dd[dd["sla_days"]==4])
         p24 = round(d24/n*100,1) if n else 0; p48 = round(d48/n*100,1) if n else 0; p96 = round(d96/n*100,1) if n else 0
         pct_tot = round(n/td*100,1) if td else 0
-        return f"""<div style="background:white;border-radius:14px;padding:16px 20px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:20px;">
+        return f"""<div style="background:white;border-radius:14px;padding:18px 22px;box-shadow:0 1px 8px rgba(0,0,0,0.07);border:1px solid #f0f2f5;display:flex;align-items:center;gap:22px;">
             {seg_svg(d24,d48,d96)}
             <div style="flex:1;min-width:0;">
                 <div style="font-size:11px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">{lbl} καθυστέρηση</div>
