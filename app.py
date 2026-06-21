@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import re
 import json
 import base64
 import hashlib
@@ -301,11 +302,21 @@ def normalize_date(d):
     """Normalize date string to dd/mm/yyyy. Google Sheets misreads yyyy-mm-dd
     when both the 'month' and 'day' parts are <=12 (e.g. 2026-12-05 becomes
     05/12/2026 instead of staying as 2026-12-05), silently swapping day/month.
-    dd/mm/yyyy matches the sheet's locale and is read back correctly."""
+    dd/mm/yyyy matches the sheet's locale and is read back correctly.
+
+    IMPORTANT: input may already be an ISO-formatted string (e.g. from
+    pandas datetime.astype(str) -> "2026-01-03 00:00:00") rather than a
+    dd/mm/yyyy string from the raw CSV. Blindly applying dayfirst=True to
+    an ISO string corrupts it (swaps day/month). So we detect ISO format
+    first and parse it dayfirst=False in that case."""
     if not d or str(d).strip() in ("","nan","NaT","None"):
         return ""
+    s = str(d).strip()
     try:
-        parsed = pd.to_datetime(str(d), dayfirst=True, errors="coerce")
+        if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+            parsed = pd.to_datetime(s, dayfirst=False, errors="coerce")
+        else:
+            parsed = pd.to_datetime(s, dayfirst=True, errors="coerce")
         if pd.isna(parsed):
             return ""
         return parsed.strftime("%d/%m/%Y")
