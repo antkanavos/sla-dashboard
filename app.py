@@ -966,11 +966,27 @@ if "Επισκόπηση" in page:
                 st.markdown(f'<div class="month-card"><div class="month-title">{title}</div><div style="color:#ccc;font-size:11px;">Δεν υπάρχουν δεδομένα</div></div>', unsafe_allow_html=True)
                 continue
             def grp_p(sd): g=mdel[mdel["sla_days"]==sd]; return g["on_time"].sum()/len(g)*100 if len(g) else 0
+            def grp_avg(sd):
+                g = mdel[mdel["sla_days"]==sd]
+                v = g["working_days"].mean()
+                return round(v,2) if pd.notna(v) else 0
             def bar(lbl,pct): c="#22c55e" if pct>=85 else "#f97316" if pct>=70 else "#ef4444"; return f'<div class="bar-lbl">{lbl}<span style="float:right;font-weight:700;color:{c};">{pct:.2f}%</span></div><div class="bar-wrap"><div style="width:{min(pct,100)}%;height:100%;background:{c};border-radius:6px;"></div></div>'
             p24=grp_p(1); p48=grp_p(2); p96=grp_p(4)
+            a24=grp_avg(1); a48=grp_avg(2); a96=grp_avg(4)
+            avg_days_block = f"""<div style="text-align:right;">
+                <div style="font-size:24px;font-weight:800;color:#374151;line-height:1;">{mm['avg_days']:.2f}<span style="font-size:10px;font-weight:700;color:#8fa3c0;text-transform:uppercase;letter-spacing:0.02em;margin-left:3px;">μ.ο. ημ.</span></div>
+                <table style="margin-top:5px;border-collapse:collapse;">
+                    <tr><td style="font-size:11px;color:#6b7280;text-align:right;padding-right:4px;white-space:nowrap;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:4px;"></span>24h</td><td style="font-size:11px;font-weight:700;color:#374151;text-align:right;width:28px;">{a24:.2f}</td></tr>
+                    <tr><td style="font-size:11px;color:#6b7280;text-align:right;padding-right:4px;white-space:nowrap;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f97316;margin-right:4px;"></span>48h</td><td style="font-size:11px;font-weight:700;color:#374151;text-align:right;width:28px;">{a48:.2f}</td></tr>
+                    <tr><td style="font-size:11px;color:#6b7280;text-align:right;padding-right:4px;white-space:nowrap;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#ef4444;margin-right:4px;"></span>96h</td><td style="font-size:11px;font-weight:700;color:#374151;text-align:right;width:28px;">{a96:.2f}</td></tr>
+                </table>
+            </div>"""
             st.markdown(f"""<div class="month-card">
-                <div class="month-title">{title}</div>
-                <div style="margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div class="month-title" style="margin-bottom:0;">{title}</div>
+                    {avg_days_block}
+                </div>
+                <div style="margin-bottom:14px;margin-top:14px;">
                     <div style="font-size:11px;color:#8fa3c0;font-weight:600;">SLA % (ΕΝΤΟΣ)</div>
                     <div style="font-size:28px;font-weight:800;color:#1a2235;">{mm['sla_pct']:.2f}%</div>
                     <div style="font-size:12px;color:#8fa3c0;">{mm['on_time']:,} / {mm['delivered']:,}</div>
